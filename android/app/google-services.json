@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "102745669648",
+    "project_id": "viberant-pos",
+    "storage_bucket": "viberant-pos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:102745669648:android:a8e21f5658a77f2f254a95",
+        "android_client_info": {
+          "package_name": "com.example.viberant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARbsjNDn9RusYuBqsQEknkqBFiyP--ZVA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:102745669648:android:d6ff41a0f5692ccb254a95",
+        "android_client_info": {
+          "package_name": "com.example.viberant_pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARbsjNDn9RusYuBqsQEknkqBFiyP--ZVA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
