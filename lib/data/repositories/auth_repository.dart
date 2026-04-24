@@ -1,6 +1,7 @@
 // lib/data/repositories/auth_repository.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '../../domain/entities/user_entity.dart';
 
 class AuthRepository {
@@ -35,7 +36,7 @@ class AuthRepository {
 
       return UserEntity.fromMap(userDoc.data()!);
     } catch (e) {
-      print('Error getting current user: $e');
+      debugPrint('Error getting current user: $e');
       return null;
     }
   }
@@ -153,12 +154,12 @@ class AuthRepository {
         await _incrementBusinessUserCount(finalBusinessId);
       }
 
-      print('✅ User created: $email with role: $role');
-      print('🏢 Business ID: $finalBusinessId');
-      print('🏢 Business Name: $finalBusinessName');
+      debugPrint('✅ User created: $email with role: $role');
+      debugPrint('🏢 Business ID: $finalBusinessId');
+      debugPrint('🏢 Business Name: $finalBusinessName');
 
       if (role == UserRole.admin) {
-        print('✅ Business created: $businessName (ID: $finalBusinessId)');
+        debugPrint('✅ Business created: $businessName (ID: $finalBusinessId)');
       }
 
       return userEntity;
@@ -257,9 +258,9 @@ class AuthRepository {
       // Decrement user count in business
       await _decrementBusinessUserCount(user.businessId);
 
-      print('✅ User deleted from Firestore: $userId');
+      debugPrint('✅ User deleted from Firestore: $userId');
     } catch (e) {
-      print('❌ Error deleting user: $e');
+      debugPrint('❌ Error deleting user: $e');
       throw Exception('Failed to delete user: $e');
     }
   }
@@ -291,9 +292,9 @@ class AuthRepository {
         'updatedAt': Timestamp.now(),
       });
 
-      print('✅ User active status updated: $userId -> $isActive');
+      debugPrint('✅ User active status updated: $userId -> $isActive');
     } catch (e) {
-      print('❌ Error updating user active status: $e');
+      debugPrint('❌ Error updating user active status: $e');
       throw Exception('Failed to update user status: $e');
     }
   }
@@ -407,7 +408,7 @@ class AuthRepository {
 
         // If business ID is the user's own ID (wrong), fix it
         if (currentBusinessId == userDoc.id) {
-          print('🔄 Fixing user: ${userData['email']}');
+          debugPrint('🔄 Fixing user: ${userData['email']}');
 
           await _firestore.collection('users').doc(userDoc.id).update({
             'businessId': correctBusinessId,
@@ -415,14 +416,14 @@ class AuthRepository {
             'updatedAt': Timestamp.now(),
           });
 
-          print('✅ Fixed user: ${userData['email']}');
+          debugPrint('✅ Fixed user: ${userData['email']}');
           fixedCount++;
         }
       }
 
-      print('🎉 Migration complete: Fixed $fixedCount users');
+      debugPrint('🎉 Migration complete: Fixed $fixedCount users');
     } catch (e) {
-      print('❌ Migration failed: $e');
+      debugPrint('❌ Migration failed: $e');
       throw Exception('Migration failed: $e');
     }
   }

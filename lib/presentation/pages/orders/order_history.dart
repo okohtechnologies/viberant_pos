@@ -1,100 +1,144 @@
+// lib/presentation/pages/orders/order_history.dart
+// CHANGED: Replaced raw FirebaseFirestore StreamBuilder with
+// ref.watch(myOrderHistoryProvider) from employee_providers.dart.
 import 'package:flutter/material.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:viberant_pos/core/theme/app_theme.dart';
-import 'package:viberant_pos/domain/entities/sale_entity.dart';
-import '../../../presentation/pages/orders/sales_details_page.dart';
-import '../../providers/auth_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../domain/entities/sale_entity.dart';
+import '../../providers/employee_providers.dart';
+import '../../widgets/common/empty_state.dart';
+import '../../widgets/common/loading_shimmer.dart';
+import '../../widgets/common/status_chip.dart';
+import '../../widgets/common/viberant_card.dart';
+import '../orders/sales_details_page.dart';
 
 class OrderHistoryPage extends ConsumerWidget {
-  final String businessId; // <-- Add this
-
-  const OrderHistoryPage({super.key, required this.businessId});
+  const OrderHistoryPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
-    final user = authState.user;
-
-    if (user == null) {
-      return const Scaffold(body: Center(child: Text('Not logged in')));
-    }
-
-    final salesStream = FirebaseFirestore.instance
-        .collection('businesses')
-        .doc(businessId) // <-- use the passed businessId
-        .collection('sales')
-        .where('cashierId', isEqualTo: user.id)
-        .orderBy('saleDate', descending: true)
-        .snapshots();
+    final salesAsync = ref.watch(myOrderHistoryProvider);
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: ViberantColors.background,
+      backgroundColor: scheme.surface,
       appBar: AppBar(
-        title: const Text('Sales History'),
-        backgroundColor: ViberantColors.surface,
+        title: Text(
+          'My Sales History',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            color: scheme.onSurface,
+          ),
+        ),
+        backgroundColor: scheme.surface,
         elevation: 0,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: salesStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(
-              child: Text(
-                'No sales recorded yet',
-                style: TextStyle(fontSize: 16),
-              ),
+      body: salesAsync.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(16),
+          child: ShimmerList(count: 8),
+        ),
+        error: (e, _) => EmptyState(
+          icon: Icons.error_outline_rounded,
+          title: 'Failed to load history',
+          description: e.toString(),
+        ),
+        data: (sales) {
+          if (sales.isEmpty) {
+            return const EmptyState(
+              icon: Icons.receipt_long_rounded,
+              title: 'No sales yet',
+              description: 'Your completed sales will appear here.',
             );
           }
-
-          final sales = snapshot.data!.docs
-              .map((doc) => SaleEntity.fromFirestore(doc))
-              .toList();
-
-          return ListView.builder(
+          return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: sales.length,
-            itemBuilder: (context, index) {
-              final sale = sales[index];
-              final date = DateFormat('yMMMd – hh:mm a').format(sale.saleDate);
-
-              return Card(
-                color: ViberantColors.surface,
-                elevation: 2,
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  title: Text(
-                    sale.customerName?.isNotEmpty == true
-                        ? sale.customerName!
-                        : "Walk-in Customer",
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text("Date: $date\nItems: ${sale.totalItems}"),
-                  trailing: Text(
-                    "₵${NumberFormat('#,###.00').format(sale.finalAmount)}",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => SaleDetailsPage(sale: sale),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (ctx, i) => _SaleRow(sale: sales[i]),
           );
         },
+      ),
+    );
+  }
+}
+
+class _SaleRow extends StatelessWidget {
+  final SaleEntity sale;
+  const _SaleRow({required this.sale});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final date = DateFormat('d MMM, hh:mm a').format(sale.saleDate);
+    final amount = NumberFormat('#,###.00').format(sale.finalAmount);
+
+    return ViberantCard(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SaleDetailsPage(sale: sale)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(ViberantRadius.md),
+            ),
+            child: Icon(
+              Icons.receipt_rounded,
+              size: 18,
+              color: scheme.onPrimaryContainer,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sale.customerName?.isNotEmpty == true
+                      ? sale.customerName!
+                      : 'Walk-in Customer',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$date  ·  ${sale.totalItems} item${sale.totalItems == 1 ? '' : 's'}',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'GHS $amount',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 4),
+              StatusChip.success(label: 'Completed'),
+            ],
+          ),
+        ],
       ),
     );
   }

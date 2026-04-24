@@ -1,269 +1,134 @@
 // lib/presentation/pages/inventory/widgets/product_list_item.dart
+// Compact list row used in contexts that need a simpler product
+// representation than the full _ProductRow in inventory_page.dart.
+// e.g. search results, selection sheets.
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
-
 import '../../../../core/theme/app_theme.dart';
 import '../../../../domain/entities/product_entity.dart';
+import '../../../widgets/common/status_chip.dart';
 
-class ProductListItem extends ConsumerStatefulWidget {
+class ProductListItem extends StatelessWidget {
   final ProductEntity product;
-  final VoidCallback onTap;
-  final ValueChanged<int> onStockUpdate;
-  final bool isMobile;
+  final VoidCallback? onTap;
+  final Widget? trailing;
 
   const ProductListItem({
     super.key,
     required this.product,
-    required this.onTap,
-    required this.onStockUpdate,
-    required this.isMobile,
+    this.onTap,
+    this.trailing,
   });
 
   @override
-  ConsumerState<ProductListItem> createState() => _ProductListItemState();
-}
-
-class _ProductListItemState extends ConsumerState<ProductListItem> {
-  bool _isUpdatingStock = false;
-
-  @override
   Widget build(BuildContext context) {
-    final product = widget.product;
-    final isMobile = widget.isMobile;
+    final scheme = Theme.of(context).colorScheme;
+    final outOfStock = product.stock <= 0;
+    final lowStock = product.stock > 0 && product.stock <= product.minStock;
 
-    return Card(
-      margin: EdgeInsets.only(bottom: isMobile ? 8 : 12),
-      child: ListTile(
-        contentPadding: EdgeInsets.all(isMobile ? 12 : 16),
-        leading: _buildProductImage(product, isMobile),
-        title: _buildProductTitle(product, isMobile),
-        subtitle: _buildProductSubtitle(product, isMobile),
-        trailing: _buildStockSection(product, isMobile),
-        onTap: widget.onTap,
-      ),
-    );
-  }
-
-  Widget _buildProductImage(ProductEntity product, bool isMobile) {
-    final size = isMobile ? 40.0 : 50.0;
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: ViberantColors.primary.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: product.imageUrl != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                product.imageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    _buildPlaceholderIcon(isMobile),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(ViberantRadius.card),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // Thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(ViberantRadius.md),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: product.imageUrl != null && product.imageUrl!.isNotEmpty
+                    ? Image.network(
+                        product.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _thumb(scheme),
+                      )
+                    : _thumb(scheme),
               ),
-            )
-          : _buildPlaceholderIcon(isMobile),
-    );
-  }
-
-  Widget _buildPlaceholderIcon(bool isMobile) {
-    return Icon(
-      Icons.inventory_2_rounded,
-      color: ViberantColors.primary,
-      size: isMobile ? 20 : 24,
-    );
-  }
-
-  Widget _buildProductTitle(ProductEntity product, bool isMobile) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          product.name,
-          style: GoogleFonts.inter(
-            fontSize: isMobile ? 14 : 16,
-            fontWeight: FontWeight.w600,
-            color: ViberantColors.onSurface,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        SizedBox(height: 2),
-        Text(
-          product.category,
-          style: GoogleFonts.inter(
-            fontSize: isMobile ? 10 : 12,
-            color: ViberantColors.grey,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProductSubtitle(ProductEntity product, bool isMobile) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'GHS ${NumberFormat('#,###.00').format(product.price)}',
-          style: GoogleFonts.poppins(
-            fontSize: isMobile ? 12 : 14,
-            fontWeight: FontWeight.w700,
-            color: ViberantColors.primary,
-          ),
-        ),
-        if (product.sku != null) ...[
-          SizedBox(height: 2),
-          Text(
-            'SKU: ${product.sku!}',
-            style: GoogleFonts.inter(
-              fontSize: isMobile ? 9 : 11,
-              color: ViberantColors.grey,
             ),
-          ),
-        ],
-      ],
-    );
-  }
+            const SizedBox(width: 12),
 
-  Widget _buildStockSection(ProductEntity product, bool isMobile) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Stock Status Badge
-        Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: isMobile ? 6 : 8,
-            vertical: isMobile ? 2 : 4,
-          ),
-          decoration: BoxDecoration(
-            color: product.stockStatusColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: product.stockStatusColor.withOpacity(0.3),
+            // Name + meta
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Text(
+                        product.category,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (outOfStock) ...[
+                        const SizedBox(width: 8),
+                        StatusChip.error(label: 'Out'),
+                      ] else if (lowStock) ...[
+                        const SizedBox(width: 8),
+                        StatusChip.warning(label: 'Low'),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          child: Text(
-            product.stockStatus,
-            style: GoogleFonts.inter(
-              fontSize: isMobile ? 8 : 10,
-              fontWeight: FontWeight.w600,
-              color: product.stockStatusColor,
+
+            // Price + optional trailing
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'GHS ${product.price.toStringAsFixed(2)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.primary,
+                  ),
+                ),
+                if (trailing != null) ...[
+                  const SizedBox(height: 4),
+                  trailing!,
+                ] else
+                  Text(
+                    '${product.stock} left',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: outOfStock
+                          ? ViberantColors.error
+                          : lowStock
+                          ? ViberantColors.warning
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
-          ),
-        ),
-        SizedBox(height: isMobile ? 4 : 8),
-
-        // Stock Controls
-        _buildStockControls(product, isMobile),
-      ],
-    );
-  }
-
-  Widget _buildStockControls(ProductEntity product, bool isMobile) {
-    if (_isUpdatingStock) {
-      return SizedBox(
-        width: isMobile ? 16 : 20,
-        height: isMobile ? 16 : 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Decrease Stock
-        _StockButton(
-          icon: Icons.remove_rounded,
-          onTap: () => _updateStock(product.stock - 1),
-          isDisabled: product.stock <= 0,
-          isMobile: isMobile,
-        ),
-
-        // Stock Display
-        Container(
-          width: isMobile ? 30 : 40,
-          padding: EdgeInsets.symmetric(horizontal: isMobile ? 4 : 8),
-          child: Text(
-            product.stock.toString(),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: isMobile ? 12 : 14,
-              fontWeight: FontWeight.w600,
-              color: ViberantColors.onSurface,
-            ),
-          ),
-        ),
-
-        // Increase Stock
-        _StockButton(
-          icon: Icons.add_rounded,
-          onTap: () => _updateStock(product.stock + 1),
-          isMobile: isMobile,
-        ),
-      ],
-    );
-  }
-
-  Future<void> _updateStock(int newStock) async {
-    if (newStock < 0) return;
-
-    setState(() {
-      _isUpdatingStock = true;
-    });
-
-    try {
-      widget.onStockUpdate(newStock);
-      await Future.delayed(Duration(milliseconds: 300));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isUpdatingStock = false;
-        });
-      }
-    }
-  }
-}
-
-class _StockButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool isDisabled;
-  final bool isMobile;
-
-  const _StockButton({
-    required this.icon,
-    required this.onTap,
-    this.isDisabled = false,
-    required this.isMobile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final size = isMobile ? 20.0 : 24.0;
-    final iconSize = isMobile ? 12.0 : 14.0;
-
-    return GestureDetector(
-      onTap: isDisabled ? null : onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: isDisabled
-              ? ViberantColors.grey.withOpacity(0.2)
-              : ViberantColors.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Icon(
-          icon,
-          size: iconSize,
-          color: isDisabled ? ViberantColors.grey : ViberantColors.primary,
+          ],
         ),
       ),
     );
   }
+
+  Widget _thumb(ColorScheme s) => Container(
+    color: s.surfaceContainerHigh,
+    child: Icon(
+      Icons.inventory_2_outlined,
+      size: 20,
+      color: s.onSurfaceVariant.withValues(alpha: 0.4),
+    ),
+  );
 }

@@ -1,58 +1,18 @@
-// lib/presentation/providers/product_filter_provider.dart
+// lib/presentation/providers/products_filter_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:viberant_pos/data/repositories/product_filter_repository.dart';
-import 'package:viberant_pos/domain/entities/product_entity.dart';
+import '../../data/repositories/product_filter_repository.dart';
+import '../../domain/entities/product_entity.dart';
+import '../../domain/states/auth_state.dart';
+import 'auth_provider.dart';
 
-// Provider for the filter repository
-final productFilterRepositoryProvider = Provider<ProductFilterRepository>((
-  ref,
-) {
-  return ProductFilterRepository();
-});
-
-// Provider family for filtered products
-final filteredProductsProvider = StreamProvider.family
-    .autoDispose<List<ProductEntity>, ProductsFilterParams>((ref, params) {
-      final repository = ref.read(productFilterRepositoryProvider);
-      return repository.getFilteredProductsStream(
-        businessId: params.businessId,
-        searchQuery: params.searchQuery,
-        category: params.category,
-      );
-    });
-
-// Provider for categories with count
-final categoriesWithCountProvider = StreamProvider.family
-    .autoDispose<List<Map<String, dynamic>>, String>((ref, businessId) {
-      final repository = ref.read(productFilterRepositoryProvider);
-      return repository.getCategoriesWithCount(businessId);
-    });
-
-// Provider for product statistics
-final productStatsProvider = FutureProvider.family
-    .autoDispose<Map<String, dynamic>, String>((ref, businessId) {
-      final repository = ref.read(productFilterRepositoryProvider);
-      return repository.getProductStats(businessId);
-    });
-
-// Provider for low stock products with filters
-final filteredLowStockProductsProvider = StreamProvider.family
-    .autoDispose<List<ProductEntity>, LowStockParams>((ref, params) {
-      final repository = ref.read(productFilterRepositoryProvider);
-      return repository.getLowStockProducts(
-        businessId: params.businessId,
-        threshold: params.threshold,
-        category: params.category,
-      );
-    });
-
-// Parameters for product filtering
-class ProductsFilterParams {
+/// Parameters for filtered product queries.
+/// Used as the family key — must implement == and hashCode.
+class FilterParams {
   final String businessId;
   final String? searchQuery;
   final String? category;
 
-  ProductsFilterParams({
+  const FilterParams({
     required this.businessId,
     this.searchQuery,
     this.category,
@@ -61,46 +21,49 @@ class ProductsFilterParams {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ProductsFilterParams &&
-          runtimeType == other.runtimeType &&
-          businessId == other.businessId &&
-          searchQuery == other.searchQuery &&
-          category == other.category;
+      other is FilterParams &&
+          other.businessId == businessId &&
+          other.searchQuery == searchQuery &&
+          other.category == category;
 
   @override
   int get hashCode =>
       businessId.hashCode ^ searchQuery.hashCode ^ category.hashCode;
 }
 
-// In your product_filter_provider.dart, add:
-final filteredProductsFutureProvider = FutureProvider.family
-    .autoDispose<List<ProductEntity>, ProductsFilterParams>((ref, params) {
-      final repository = ref.read(productFilterRepositoryProvider);
-      return repository.getProductsOnce(
+final productFilterRepositoryProvider = Provider<ProductFilterRepository>((
+  ref,
+) {
+  return ProductFilterRepository();
+});
+
+/// Filtered + searched products stream.
+/// Auto-disposes when the screen using it leaves the tree.
+final filteredProductsProvider = StreamProvider.autoDispose
+    .family<List<ProductEntity>, FilterParams>((ref, params) {
+      final repo = ref.read(productFilterRepositoryProvider);
+
+      return repo.getFilteredProductsStream(
         businessId: params.businessId,
         searchQuery: params.searchQuery,
         category: params.category,
       );
     });
 
-// Parameters for low stock filtering
-class LowStockParams {
-  final String businessId;
-  final int? threshold;
-  final String? category;
+/// Convenience provider — current user's business products, filtered.
+/// Reads businessId from auth so screens don't need to pass it.
+final currentUserFilteredProductsProvider = StreamProvider.autoDispose
+    .family<List<ProductEntity>, ({String? searchQuery, String? category})>((
+      ref,
+      params,
+    ) {
+      final auth = ref.watch(authProvider);
+      if (auth is! AuthAuthenticated) return const Stream.empty();
 
-  LowStockParams({required this.businessId, this.threshold, this.category});
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is LowStockParams &&
-          runtimeType == other.runtimeType &&
-          businessId == other.businessId &&
-          threshold == other.threshold &&
-          category == other.category;
-
-  @override
-  int get hashCode =>
-      businessId.hashCode ^ threshold.hashCode ^ category.hashCode;
-}
+      final repo = ref.read(productFilterRepositoryProvider);
+      return repo.getFilteredProductsStream(
+        businessId: auth.user.businessId,
+        searchQuery: params.searchQuery,
+        category: params.category,
+      );
+    });

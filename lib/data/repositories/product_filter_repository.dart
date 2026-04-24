@@ -1,5 +1,6 @@
 // lib/data/repositories/product_filter_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:viberant_pos/domain/entities/product_entity.dart';
 
 class ProductFilterRepository {
@@ -14,8 +15,8 @@ class ProductFilterRepository {
     String? searchQuery,
     String? category,
   }) {
-    print('🔄 Getting filtered products stream for business: $businessId');
-    print('   Search: $searchQuery, Category: $category');
+    debugPrint('🔄 Getting filtered products stream for business: $businessId');
+    debugPrint('   Search: $searchQuery, Category: $category');
 
     // Start with base query
     Query query = _firestore
@@ -54,20 +55,20 @@ class ProductFilterRepository {
             }).toList();
           }
 
-          print(
+          debugPrint(
             '📦 Filtered products stream update: ${products.length} products',
           );
           return products;
         })
         .handleError((error) {
-          print('❌ Filtered products stream error: $error');
+          debugPrint('❌ Filtered products stream error: $error');
           throw error;
         });
   }
 
   // Get categories with product count
   Stream<List<Map<String, dynamic>>> getCategoriesWithCount(String businessId) {
-    print('📂 Getting categories with count for business: $businessId');
+    debugPrint('📂 Getting categories with count for business: $businessId');
 
     return _firestore
         .collection('businesses')
@@ -91,11 +92,11 @@ class ProductFilterRepository {
           // Add "All" category with total count
           result.insert(0, {'name': 'All', 'count': snapshot.docs.length});
 
-          print('📂 Found ${result.length} categories');
+          debugPrint('📂 Found ${result.length} categories');
           return result;
         })
         .handleError((error) {
-          print('❌ Categories with count error: $error');
+          debugPrint('❌ Categories with count error: $error');
           throw error;
         });
   }
@@ -110,9 +111,9 @@ class ProductFilterRepository {
     int? minStock,
     int? maxStock,
   }) {
-    print('🔍 Advanced search for business: $businessId');
-    print('   Name: $nameQuery, Category: $category');
-    print('   Price: $minPrice - $maxPrice, Stock: $minStock - $maxStock');
+    debugPrint('🔍 Advanced search for business: $businessId');
+    debugPrint('   Name: $nameQuery, Category: $category');
+    debugPrint('   Price: $minPrice - $maxPrice, Stock: $minStock - $maxStock');
 
     return _firestore
         .collection('businesses')
@@ -171,11 +172,11 @@ class ProductFilterRepository {
                 .toList();
           }
 
-          print('🔍 Advanced search found: ${products.length} products');
+          debugPrint('🔍 Advanced search found: ${products.length} products');
           return products;
         })
         .handleError((error) {
-          print('❌ Advanced search error: $error');
+          debugPrint('❌ Advanced search error: $error');
           throw error;
         });
   }
@@ -186,7 +187,7 @@ class ProductFilterRepository {
     String? searchQuery,
     String? category,
   }) async {
-    print('📋 Getting products once for business: $businessId');
+    debugPrint('📋 Getting products once for business: $businessId');
 
     Query query = _firestore
         .collection('businesses')
@@ -219,7 +220,7 @@ class ProductFilterRepository {
       }).toList();
     }
 
-    print('📋 Found ${products.length} products');
+    debugPrint('📋 Found ${products.length} products');
     return products;
   }
 
@@ -231,7 +232,7 @@ class ProductFilterRepository {
   }) {
     final lowStockThreshold = threshold ?? 10;
 
-    print('⚠️ Getting low stock products (threshold: $lowStockThreshold)');
+    debugPrint('⚠️ Getting low stock products (threshold: $lowStockThreshold)');
 
     return _firestore
         .collection('businesses')
@@ -259,11 +260,11 @@ class ProductFilterRepository {
           // Sort by stock level (lowest first)
           products.sort((a, b) => a.stock.compareTo(b.stock));
 
-          print('⚠️ Found ${products.length} low stock products');
+          debugPrint('⚠️ Found ${products.length} low stock products');
           return products;
         })
         .handleError((error) {
-          print('❌ Low stock products error: $error');
+          debugPrint('❌ Low stock products error: $error');
           throw error;
         });
   }
@@ -275,7 +276,7 @@ class ProductFilterRepository {
     required double maxPrice,
     String? category,
   }) {
-    print('💰 Getting products by price range: $minPrice - $maxPrice');
+    debugPrint('💰 Getting products by price range: $minPrice - $maxPrice');
 
     return _firestore
         .collection('businesses')
@@ -306,18 +307,18 @@ class ProductFilterRepository {
           // Sort by price
           products.sort((a, b) => a.price.compareTo(b.price));
 
-          print('💰 Found ${products.length} products in price range');
+          debugPrint('💰 Found ${products.length} products in price range');
           return products;
         })
         .handleError((error) {
-          print('❌ Products by price range error: $error');
+          debugPrint('❌ Products by price range error: $error');
           throw error;
         });
   }
 
   // Get statistics for dashboard
   Future<Map<String, dynamic>> getProductStats(String businessId) async {
-    print('📊 Getting product statistics for business: $businessId');
+    debugPrint('📊 Getting product statistics for business: $businessId');
 
     try {
       // Get all active products
@@ -368,10 +369,10 @@ class ProductFilterRepository {
         'categories': categories.toList(),
       };
 
-      print('📊 Product statistics: $stats');
+      debugPrint('📊 Product statistics: $stats');
       return stats;
     } catch (e) {
-      print('❌ Product statistics error: $e');
+      debugPrint('❌ Product statistics error: $e');
       throw Exception('Failed to get product statistics: $e');
     }
   }
@@ -381,7 +382,7 @@ class ProductFilterRepository {
     String businessId, {
     int limit = 10,
   }) {
-    print('🕒 Getting recently updated products (limit: $limit)');
+    debugPrint('🕒 Getting recently updated products (limit: $limit)');
 
     return _firestore
         .collection('businesses')
@@ -400,11 +401,13 @@ class ProductFilterRepository {
           // Take limit
           final recentProducts = products.take(limit).toList();
 
-          print('🕒 Found ${recentProducts.length} recently updated products');
+          debugPrint(
+            '🕒 Found ${recentProducts.length} recently updated products',
+          );
           return recentProducts;
         })
         .handleError((error) {
-          print('❌ Recently updated products error: $error');
+          debugPrint('❌ Recently updated products error: $error');
           throw error;
         });
   }
@@ -414,7 +417,7 @@ class ProductFilterRepository {
     String businessId, {
     int limit = 10,
   }) {
-    print('💰 Getting high profit margin products');
+    debugPrint('💰 Getting high profit margin products');
 
     return _firestore
         .collection('businesses')
@@ -435,18 +438,20 @@ class ProductFilterRepository {
           });
 
           final highProfitProducts = products.take(limit).toList();
-          print('💰 Found ${highProfitProducts.length} high profit products');
+          debugPrint(
+            '💰 Found ${highProfitProducts.length} high profit products',
+          );
           return highProfitProducts;
         })
         .handleError((error) {
-          print('❌ High profit products error: $error');
+          debugPrint('❌ High profit products error: $error');
           throw error;
         });
   }
 
   // Get all unique categories
   Future<List<String>> getAllCategories(String businessId) async {
-    print('📂 Getting all categories for business: $businessId');
+    debugPrint('📂 Getting all categories for business: $businessId');
 
     try {
       final snapshot = await _firestore
@@ -467,10 +472,10 @@ class ProductFilterRepository {
       categories.sort();
       categories.insert(0, 'All');
 
-      print('📂 Found ${categories.length} categories');
+      debugPrint('📂 Found ${categories.length} categories');
       return categories;
     } catch (e) {
-      print('❌ Get all categories error: $e');
+      debugPrint('❌ Get all categories error: $e');
       throw Exception('Failed to get categories: $e');
     }
   }

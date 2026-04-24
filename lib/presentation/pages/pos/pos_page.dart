@@ -1,887 +1,401 @@
-// lib/features/pos/presentation/pages/pos_page.dart
-// ignore_for_file: deprecated_member_use
-
+// lib/presentation/pages/pos/pos_page.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:collection/collection.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:intl/intl.dart';
-
-import '../../../../core/theme/app_theme.dart';
-import '../../../../domain/entities/product_entity.dart';
-import '../../../../domain/states/auth_state.dart';
-import '../../../../presentation/providers/auth_provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/constants/breakpoints.dart';
+import '../../../domain/entities/product_entity.dart';
+import '../../../domain/entities/sale_entity.dart';
 import '../../providers/cart_provider.dart';
+import '../../providers/inventory_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../widgets/common/empty_state.dart';
+import '../../widgets/common/loading_shimmer.dart';
 import '../../widgets/pos/cart_panel.dart';
 import '../../widgets/pos/category_filter.dart';
+import '../../widgets/pos/payment_modal.dart';
+import '../../widgets/pos/product_card.dart';
 
-class PosPage extends HookConsumerWidget {
+class PosPage extends ConsumerStatefulWidget {
   const PosPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final searchController = useTextEditingController();
-    final searchQuery = useState('');
-    final selectedCategory = useState('All');
+  ConsumerState<PosPage> createState() => _PosPageState();
+}
 
-    // Get products from Firebase - this will be empty if not authenticated
-    final productsAsync = ref.watch(productsProvider);
+class _PosPageState extends ConsumerState<PosPage> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+  String _category = 'All';
 
-    // Check if user is authenticated
-    final authState = ref.watch(authProvider);
-
-    // Get screen size for responsive design
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768; // Tablet breakpoint
-    final isSmallMobile = screenWidth < 400;
-
-    // Show login prompt if not authenticated
-    if (authState is! AuthAuthenticated) {
-      return _buildNotAuthenticatedState(isMobile);
-    }
-
-    // Handle loading state
-    if (productsAsync.isLoading) {
-      return _buildLoadingState(isMobile);
-    }
-
-    // Handle error state
-    if (productsAsync.hasError) {
-      return _buildErrorState(
-        productsAsync.error ?? 'Unknown error',
-        ref,
-        isMobile,
-      );
-    }
-
-    // Get products or empty list
-    final products = productsAsync.value ?? [];
-
-    final filteredProducts = products.where((product) {
-      final matchesSearch =
-          product.name.toLowerCase().contains(
-            searchQuery.value.toLowerCase(),
-          ) ||
-          product.description.toLowerCase().contains(
-            searchQuery.value.toLowerCase(),
-          );
-      final matchesCategory =
-          selectedCategory.value == 'All' ||
-          product.category == selectedCategory.value;
-      return matchesSearch && matchesCategory && product.stock > 0;
-    }).toList();
-
-    // Get unique categories from products
-    final categories = ['All', ...products.map((p) => p.category).toSet()];
-
-    // For mobile, use vertical layout; for desktop, use horizontal layout
-    if (isMobile) {
-      return _buildMobileLayout(
-        context,
-        searchController,
-        searchQuery,
-        selectedCategory,
-        categories,
-        filteredProducts,
-        isSmallMobile,
-      );
-    } else {
-      return _buildDesktopLayout(
-        searchController,
-        searchQuery,
-        selectedCategory,
-        categories,
-        filteredProducts,
-      );
-    }
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
-  Widget _buildMobileLayout(
-    BuildContext context,
-    TextEditingController searchController,
-    ValueNotifier<String> searchQuery,
-    ValueNotifier<String> selectedCategory,
-    List<String> categories,
-    List<ProductEntity> filteredProducts,
-    bool isSmallMobile,
-  ) {
+  List<ProductEntity> _filter(List<ProductEntity> all) {
+    return all.where((p) {
+      if (p.stock <= 0) return false;
+      final matchQ =
+          _query.isEmpty || p.name.toLowerCase().contains(_query.toLowerCase());
+      final matchC = _category == 'All' || p.category == _category;
+      return matchQ && matchC;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final productsAsync = ref.watch(productsProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
+    final cartSummary = ref.watch(cartSummaryProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final width = MediaQuery.of(context).size.width;
+    final isDesktop = width >= Breakpoints.desktop;
+
     return Scaffold(
-      backgroundColor: ViberantColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header with Search - Mobile
-            _PosHeader(
-              searchController: searchController,
-              onSearchChanged: (value) => searchQuery.value = value,
-              isMobile: true,
-              isSmallMobile: isSmallMobile,
+      backgroundColor: scheme.surface,
+      body: isDesktop
+          ? _buildDesktopLayout(productsAsync, categoriesAsync, scheme)
+          : _buildMobileLayout(
+              productsAsync,
+              categoriesAsync,
+              cartSummary,
+              scheme,
             ),
-
-            // Category Filter - Mobile
-            CategoryFilter(
-              selectedCategory: selectedCategory.value,
-              onCategorySelected: (category) =>
-                  selectedCategory.value = category,
-              categories: categories,
-              isMobile: true,
-            ),
-
-            // Products Grid - Mobile
-            Expanded(
-              child: filteredProducts.isEmpty
-                  ? _EmptyProductsState(
-                      searchQuery: searchQuery.value,
-                      isMobile: true,
-                    )
-                  : _ProductsGrid(
-                      products: filteredProducts,
-                      isMobile: true,
-                      isSmallMobile: isSmallMobile,
-                    ),
-            ),
-
-            // Cart Panel as Bottom Sheet for Mobile
-            _MobileCartButton(),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildDesktopLayout(
-    TextEditingController searchController,
-    ValueNotifier<String> searchQuery,
-    ValueNotifier<String> selectedCategory,
-    List<String> categories,
-    List<ProductEntity> filteredProducts,
+    AsyncValue<List<ProductEntity>> productsAsync,
+    AsyncValue<List<String>> categoriesAsync,
+    ColorScheme scheme,
   ) {
-    return Scaffold(
-      backgroundColor: ViberantColors.background,
-      body: SafeArea(
-        child: Row(
-          children: [
-            // Products Section - Desktop
-            Expanded(
-              flex: 3,
-              child: Column(
-                children: [
-                  // Header with Search - Desktop
-                  _PosHeader(
-                    searchController: searchController,
-                    onSearchChanged: (value) => searchQuery.value = value,
-                    isMobile: false,
-                    isSmallMobile: false,
-                  ),
-
-                  // Category Filter - Desktop
-                  CategoryFilter(
-                    selectedCategory: selectedCategory.value,
-                    onCategorySelected: (category) =>
-                        selectedCategory.value = category,
-                    categories: categories,
-                    isMobile: false,
-                  ),
-
-                  // Products Grid - Desktop
-                  Expanded(
-                    child: filteredProducts.isEmpty
-                        ? _EmptyProductsState(
-                            searchQuery: searchQuery.value,
-                            isMobile: false,
-                          )
-                        : _ProductsGrid(
-                            products: filteredProducts,
-                            isMobile: false,
-                            isSmallMobile: false,
-                          ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Cart Panel - Desktop
-            const Expanded(flex: 2, child: CartPanel()),
-          ],
+    return Row(
+      children: [
+        Expanded(
+          flex: 63,
+          child: _buildProductArea(productsAsync, categoriesAsync, scheme),
         ),
-      ),
+        SizedBox(
+          width: MediaQuery.of(context).size.width * 0.37,
+          child: CartPanel(onSaleComplete: _onSaleComplete),
+        ),
+      ],
     );
   }
 
-  Widget _buildNotAuthenticatedState(bool isMobile) {
-    return Scaffold(
-      backgroundColor: ViberantColors.background,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(isMobile ? 24 : 32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.login_rounded,
-                  size: isMobile ? 48 : 64,
-                  color: ViberantColors.grey.withOpacity(0.5),
-                ),
-                SizedBox(height: isMobile ? 16 : 24),
-                Text(
-                  'Please Sign In',
-                  style: GoogleFonts.inter(
-                    fontSize: isMobile ? 20 : 24,
-                    fontWeight: FontWeight.w600,
-                    color: ViberantColors.grey,
-                  ),
-                ),
-                SizedBox(height: isMobile ? 8 : 12),
-                Text(
-                  'You need to be signed in to access the POS',
-                  style: GoogleFonts.inter(
-                    fontSize: isMobile ? 14 : 16,
-                    color: ViberantColors.grey.withOpacity(0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: isMobile ? 20 : 32),
-                SizedBox(
-                  width: isMobile ? double.infinity : 200,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      // Navigate to login page
-                    },
-                    child: Text(
-                      'Sign In',
-                      style: GoogleFonts.inter(fontSize: isMobile ? 16 : 18),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingState(bool isMobile) {
-    return Scaffold(
-      backgroundColor: ViberantColors.background,
-      body: SafeArea(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: ViberantColors.primary),
-              SizedBox(height: isMobile ? 16 : 24),
-              Text(
-                'Loading Products...',
-                style: GoogleFonts.inter(
-                  color: ViberantColors.grey,
-                  fontSize: isMobile ? 16 : 18,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorState(Object error, WidgetRef ref, bool isMobile) {
-    return Scaffold(
-      backgroundColor: ViberantColors.background,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(isMobile ? 24 : 32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline_rounded,
-                  size: isMobile ? 48 : 64,
-                  color: ViberantColors.error,
-                ),
-                SizedBox(height: isMobile ? 16 : 24),
-                Text(
-                  'Failed to load products',
-                  style: GoogleFonts.inter(
-                    color: ViberantColors.error,
-                    fontSize: isMobile ? 18 : 20,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: isMobile ? 8 : 12),
-                Text(
-                  error.toString(),
-                  style: GoogleFonts.inter(
-                    color: ViberantColors.grey,
-                    fontSize: isMobile ? 14 : 16,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: isMobile ? 20 : 32),
-                SizedBox(
-                  width: isMobile ? double.infinity : 200,
-                  child: ElevatedButton(
-                    onPressed: () => ref.invalidate(productsProvider),
-                    child: Text(
-                      'Retry',
-                      style: GoogleFonts.inter(fontSize: isMobile ? 16 : 18),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Mobile Cart Button (Shows cart as bottom sheet)
-class _MobileCartButton extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cartSummary = ref.watch(cartSummaryProvider);
-
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ViberantColors.surface,
-        border: Border(
-          top: BorderSide(color: ViberantColors.grey.withOpacity(0.1)),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Cart Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${cartSummary.totalItems} items',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: ViberantColors.onSurface,
-                  ),
-                ),
-                Text(
-                  'GHS ${NumberFormat('#,###.00').format(cartSummary.totalAmount)}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: ViberantColors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // View Cart Button
-          ElevatedButton(
-            onPressed: () {
-              showModalBottomSheet(
+  Widget _buildMobileLayout(
+    AsyncValue<List<ProductEntity>> productsAsync,
+    AsyncValue<List<String>> categoriesAsync,
+    CartSummary cartSummary,
+    ColorScheme scheme,
+  ) {
+    return Stack(
+      children: [
+        _buildProductArea(productsAsync, categoriesAsync, scheme),
+        if (cartSummary.totalItems > 0)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: _CartFAB(
+              summary: cartSummary,
+              onTap: () async {
+                final sale = await showModalBottomSheet<SaleEntity>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => const PaymentModal(),
+                );
+                if (sale != null) _onSaleComplete(sale);
+              },
+              onViewCart: () => showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (context) => SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.8,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                    child: CartPanel(),
-                  ),
+                builder: (_) => DraggableScrollableSheet(
+                  initialChildSize: 0.6,
+                  maxChildSize: 0.92,
+                  minChildSize: 0.4,
+                  expand: false,
+                  builder: (_, ctrl) =>
+                      CartPanel(onSaleComplete: _onSaleComplete),
                 ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ViberantColors.primary,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              'View Cart',
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-        ],
-      ),
+      ],
+    );
+  }
+
+  Widget _buildProductArea(
+    AsyncValue<List<ProductEntity>> productsAsync,
+    AsyncValue<List<String>> categoriesAsync,
+    ColorScheme scheme,
+  ) {
+    return Column(
+      children: [
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+            decoration: InputDecoration(
+              hintText: 'Search products…',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
+              suffixIcon: _query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () {
+                        _searchCtrl.clear();
+                        setState(() => _query = '');
+                      },
+                    )
+                  : null,
+            ),
+          ),
+        ),
+
+        // Category chips
+        categoriesAsync.when(
+          loading: () => const SizedBox(height: 36),
+          error: (_, __) => const SizedBox.shrink(),
+          data: (cats) => CategoryFilter(
+            categories: cats,
+            selected: _category,
+            onSelected: (c) => setState(() => _category = c),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        // Product grid
+        Expanded(
+          child: productsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: ShimmerList(count: 8),
+            ),
+            error: (e, _) => EmptyState(
+              icon: Icons.error_outline_rounded,
+              title: 'Failed to load products',
+              description: e.toString(),
+            ),
+            data: (all) {
+              final products = _filter(all);
+              if (products.isEmpty) {
+                return EmptyState(
+                  icon: Icons.search_off_rounded,
+                  title: _query.isNotEmpty ? 'No results' : 'No products',
+                  description: _query.isNotEmpty
+                      ? 'Try a different search term.'
+                      : 'Add products in the Inventory tab.',
+                );
+              }
+              final width = MediaQuery.of(context).size.width;
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: gridColumns(width),
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.72,
+                ),
+                itemCount: products.length,
+                itemBuilder: (_, i) =>
+                    ProductCard(
+                      product: products[i],
+                      onTap: () {
+                        ref.read(cartProvider.notifier).addProduct(products[i]);
+                        _showAddedFeedback(products[i].name);
+                      },
+                    ).animate().fadeIn(
+                      delay: Duration(milliseconds: i * 30),
+                      duration: 250.ms,
+                    ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showAddedFeedback(String name) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$name added to cart'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+  }
+
+  void _onSaleComplete(SaleEntity sale) {
+    showDialog(
+      context: context,
+      builder: (_) => _SuccessDialog(sale: sale),
     );
   }
 }
 
-// Empty Products State
-class _EmptyProductsState extends StatelessWidget {
-  final String searchQuery;
-  final bool isMobile;
+class _CartFAB extends StatelessWidget {
+  final CartSummary summary;
+  final VoidCallback onTap;
+  final VoidCallback onViewCart;
 
-  const _EmptyProductsState({
-    required this.searchQuery,
-    required this.isMobile,
+  const _CartFAB({
+    required this.summary,
+    required this.onTap,
+    required this.onViewCart,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(isMobile ? 24 : 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: isMobile ? 48 : 64,
-              color: ViberantColors.grey.withOpacity(0.3),
-            ),
-            SizedBox(height: isMobile ? 16 : 24),
-            Text(
-              searchQuery.isEmpty
-                  ? "No Products Available"
-                  : "No Products Found",
-              style: GoogleFonts.inter(
-                fontSize: isMobile ? 18 : 20,
-                fontWeight: FontWeight.w600,
-                color: ViberantColors.grey,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: isMobile ? 8 : 12),
-            Text(
-              searchQuery.isEmpty
-                  ? "Add products to your inventory to get started"
-                  : "Try searching with different terms",
-              style: GoogleFonts.inter(
-                fontSize: isMobile ? 14 : 16,
-                color: ViberantColors.grey.withOpacity(0.7),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Products Grid with Horizontal Layout
-class _ProductsGrid extends StatelessWidget {
-  final List<ProductEntity> products;
-  final bool isMobile;
-  final bool isSmallMobile;
-
-  const _ProductsGrid({
-    required this.products,
-    required this.isMobile,
-    required this.isSmallMobile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isMobile) {
-      return _buildMobileList();
-    } else {
-      return _buildDesktopGrid();
-    }
-  }
-
-  Widget _buildMobileList() {
-    return ListView.builder(
-      padding: EdgeInsets.all(isSmallMobile ? 8 : 12),
-      itemCount: products.length,
-      itemBuilder: (context, index) {
-        return Container(
-          margin: EdgeInsets.only(bottom: isSmallMobile ? 8 : 12),
-          child: _HorizontalProductCard(
-            product: products[index],
-            isMobile: true,
-            isSmallMobile: isSmallMobile,
-          ).animate().fadeIn(delay: (index * 50).ms).slideY(begin: 0.1, end: 0),
-        );
-      },
-    );
-  }
-
-  Widget _buildDesktopGrid() {
-    final crossAxisCount = 3; // Reduced for better horizontal layout
-    final padding = 16.0;
-    final spacing = 12.0;
-
-    return Padding(
-      padding: EdgeInsets.all(padding),
-      child: GridView.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: spacing,
-          mainAxisSpacing: spacing,
-          childAspectRatio: 1.8, // Horizontal aspect ratio
-        ),
-        itemCount: products.length,
-        itemBuilder: (context, index) {
-          return _HorizontalProductCard(
-            product: products[index],
-            isMobile: false,
-            isSmallMobile: false,
-          ).animate().fadeIn(delay: (index * 50).ms).slideY(begin: 0.1, end: 0);
-        },
-      ),
-    );
-  }
-}
-
-// Horizontal Product Card
-class _HorizontalProductCard extends ConsumerWidget {
-  final ProductEntity product;
-  final bool isMobile;
-  final bool isSmallMobile;
-
-  const _HorizontalProductCard({
-    required this.product,
-    required this.isMobile,
-    required this.isSmallMobile,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cart = ref.watch(cartProvider);
-    final cartItem = cart.firstWhereOrNull(
-      (item) => item.product.id == product.id,
-    );
-    final quantityInCart = cartItem?.quantity ?? 0;
-
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: ViberantColors.surface,
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
-        onTap: () => _addToCart(ref),
-        borderRadius: BorderRadius.circular(12),
+        onTap: onViewCart,
+        borderRadius: BorderRadius.circular(ViberantRadius.card),
         child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(ViberantRadius.card),
+            boxShadow: ViberantShadows.level4Modal,
           ),
           child: Row(
             children: [
-              // Product Image/Icon
-              _buildProductImage(),
-
-              // Product Info
-              Expanded(child: _buildProductInfo()),
-
-              // Price and Add Button
-              _buildPriceAndAction(quantityInCart, ref),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '${summary.totalItems}',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'View Cart',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Text(
+                'GHS ${summary.totalAmount.toStringAsFixed(2)}',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onTap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(ViberantRadius.full),
+                  ),
+                  child: Text(
+                    'Pay',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildProductImage() {
-    final size = isMobile ? 60.0 : 80.0;
+class _SuccessDialog extends StatelessWidget {
+  final SaleEntity sale;
+  const _SuccessDialog({required this.sale});
 
-    return Container(
-      width: size,
-      height: size,
-      margin: EdgeInsets.all(isMobile ? 8 : 12),
-      decoration: BoxDecoration(
-        color: ViberantColors.primary.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ViberantRadius.lg),
       ),
-      child: Icon(
-        Icons.shopping_bag_rounded,
-        color: ViberantColors.primary,
-        size: isMobile ? 24 : 32,
-      ),
-    );
-  }
-
-  Widget _buildProductInfo() {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: isMobile ? 8 : 12,
-        horizontal: isMobile ? 4 : 8,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Product Name
-          Text(
-            product.name,
-            style: GoogleFonts.inter(
-              fontSize: isMobile ? 14 : 16,
-              fontWeight: FontWeight.w600,
-              color: ViberantColors.onSurface,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-
-          SizedBox(height: isMobile ? 2 : 4),
-
-          // Product Description
-          Text(
-            product.description,
-            style: GoogleFonts.inter(
-              fontSize: isMobile ? 11 : 12,
-              color: ViberantColors.grey,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-
-          SizedBox(height: isMobile ? 4 : 6),
-
-          // Stock Status
           Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 6 : 8,
-              vertical: isMobile ? 2 : 4,
-            ),
+            width: 64,
+            height: 64,
             decoration: BoxDecoration(
-              color: product.stockStatusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: product.stockStatusColor.withOpacity(0.3),
-              ),
+              color: ViberantColors.success.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
             ),
-            child: Text(
-              '${product.stock} in stock',
-              style: GoogleFonts.inter(
-                fontSize: isMobile ? 9 : 10,
-                fontWeight: FontWeight.w500,
-                color: product.stockStatusColor,
-              ),
+            child: Icon(
+              Icons.check_circle_rounded,
+              size: 32,
+              color: ViberantColors.success,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPriceAndAction(int quantityInCart, WidgetRef ref) {
-    return Padding(
-      padding: EdgeInsets.all(isMobile ? 8 : 12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Price
+          ).animate().scale(duration: 400.ms, curve: Curves.elasticOut),
+          const SizedBox(height: 16),
           Text(
-            'GHS ${NumberFormat('#,###.00').format(product.price)}',
-            style: GoogleFonts.poppins(
-              fontSize: isMobile ? 14 : 16,
+            'Payment Successful!',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: ViberantColors.primary,
+              color: scheme.onSurface,
             ),
           ),
-
-          SizedBox(height: isMobile ? 4 : 8),
-
-          // Add to Cart Button or Quantity Indicator
-          if (quantityInCart == 0)
-            Container(
-              width: isMobile ? 28 : 32,
-              height: isMobile ? 28 : 32,
-              decoration: BoxDecoration(
-                color: ViberantColors.primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.add_rounded,
-                color: Colors.white,
-                size: isMobile ? 16 : 18,
-              ),
-            ).animate().scale(duration: 300.ms).fadeIn()
-          else
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 8 : 12,
-                vertical: isMobile ? 4 : 6,
-              ),
-              decoration: BoxDecoration(
-                color: ViberantColors.primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                quantityInCart.toString(),
-                style: GoogleFonts.inter(
-                  fontSize: isMobile ? 12 : 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ).animate().scale(duration: 300.ms),
-        ],
-      ),
-    );
-  }
-
-  void _addToCart(WidgetRef ref) {
-    if (product.stock > 0) {
-      ref.read(cartProvider.notifier).addProduct(product);
-    }
-  }
-}
-
-// POS Header
-class _PosHeader extends StatelessWidget {
-  final TextEditingController searchController;
-  final ValueChanged<String> onSearchChanged;
-  final bool isMobile;
-  final bool isSmallMobile;
-
-  const _PosHeader({
-    required this.searchController,
-    required this.onSearchChanged,
-    required this.isMobile,
-    required this.isSmallMobile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 12 : 16),
-      decoration: BoxDecoration(
-        color: ViberantColors.surface,
-        border: Border(
-          bottom: BorderSide(color: ViberantColors.grey.withOpacity(0.1)),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Search Bar
-          Expanded(
-            child: Container(
-              height: isMobile ? 44 : 48,
-              decoration: BoxDecoration(
-                color: ViberantColors.background,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: TextField(
-                controller: searchController,
-                onChanged: onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: "Search products...",
-                  hintStyle: GoogleFonts.inter(
-                    color: ViberantColors.grey,
-                    fontSize: isMobile ? 14 : 16,
-                  ),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: ViberantColors.grey,
-                    size: isMobile ? 20 : 24,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 12 : 16,
-                  ),
-                ),
-              ),
+          const SizedBox(height: 8),
+          Text(
+            'GHS ${sale.finalAmount.toStringAsFixed(2)}  ·  ${sale.items.length} item${sale.items.length == 1 ? '' : 's'}',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: scheme.onSurfaceVariant,
             ),
           ),
-
-          if (!isSmallMobile) ...[
-            SizedBox(width: isMobile ? 12 : 16),
-
-            // Quick Actions (hidden on very small screens)
-            Row(
-              children: [
-                _HeaderAction(
-                  icon: Icons.qr_code_scanner_rounded,
-                  label: "Scan",
-                  onTap: () {},
-                  isMobile: isMobile,
-                ),
-                SizedBox(width: isMobile ? 8 : 12),
-                _HeaderAction(
-                  icon: Icons.receipt_long_rounded,
-                  label: "Recent",
-                  onTap: () {},
-                  isMobile: isMobile,
-                ),
-                if (!isMobile) ...[
-                  SizedBox(width: 12),
-                  _HeaderAction(
-                    icon: Icons.people_rounded,
-                    label: "Customers",
-                    onTap: () {},
-                    isMobile: isMobile,
-                  ),
-                ],
-              ],
+          const SizedBox(height: 4),
+          Text(
+            sale.transactionId,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: scheme.onSurfaceVariant,
             ),
-          ],
+          ),
         ],
       ),
-    );
-  }
-}
-
-// Header Action Button
-class _HeaderAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool isMobile;
-
-  const _HeaderAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    required this.isMobile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: isMobile ? 12 : 16,
-          vertical: isMobile ? 6 : 8,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
         ),
-        decoration: BoxDecoration(
-          color: ViberantColors.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: isMobile ? 16 : 18, color: ViberantColors.primary),
-            SizedBox(width: isMobile ? 4 : 6),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: isMobile ? 11 : 12,
-                fontWeight: FontWeight.w500,
-                color: ViberantColors.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }

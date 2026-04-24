@@ -1,914 +1,893 @@
-// lib/presentation/pages/dashboard/admin/users_management_page.dart
+// lib/presentation/pages/admin/users_management_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
-import 'package:viberant_pos/domain/entities/user_entity.dart';
-import 'package:viberant_pos/domain/states/auth_state.dart';
-import 'package:viberant_pos/presentation/providers/auth_provider.dart';
-import 'package:viberant_pos/core/theme/app_theme.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../data/repositories/auth_repository.dart';
+import '../../../domain/entities/user_entity.dart';
+import '../../../domain/states/auth_state.dart';
+import '../../providers/auth_provider.dart';
+import '../../widgets/common/app_avatar.dart';
+import '../../widgets/common/empty_state.dart';
+import '../../widgets/common/loading_shimmer.dart';
+import '../../widgets/common/status_chip.dart';
+import '../../widgets/common/viberant_card.dart';
 
-class UsersManagementPage extends ConsumerStatefulWidget {
+// ─── Repository provider ───────────────────────────────────────────
+final _authRepoProvider = Provider<AuthRepository>((ref) {
+  return AuthRepository();
+});
+
+class UsersManagementPage extends ConsumerWidget {
   const UsersManagementPage({super.key});
 
   @override
-  ConsumerState<UsersManagementPage> createState() =>
-      _UsersManagementPageState();
-}
-
-class _UsersManagementPageState extends ConsumerState<UsersManagementPage> {
-  final _searchController = TextEditingController();
-  String _searchQuery = '';
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
+    if (authState is! AuthAuthenticated) return const SizedBox.shrink();
 
-    // Check if user is admin
-    if (authState is! AuthAuthenticated || !authState.user.isAdmin) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Access Denied')),
-        body: const Center(
-          child: Text('You do not have permission to access this page.'),
-        ),
-      );
-    }
-
-    final businessId = authState.user.businessId;
+    final scheme = Theme.of(context).colorScheme;
+    final repo = ref.read(_authRepoProvider);
 
     return Scaffold(
-      backgroundColor: ViberantColors.background,
+      backgroundColor: scheme.surface,
       appBar: AppBar(
-        title: const Text('User Management'),
-        backgroundColor: ViberantColors.surface,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_add_rounded),
-            onPressed: () => _showAddUserDialog(context, ref, authState.user),
-            tooltip: 'Add User',
+        title: Text(
+          'Staff Management',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
-          // Migration button to fix existing users
-          // IconButton(
-          // icon: const Icon(Icons.refresh_rounded),
-          // onPressed: () => _migrateUsers(context, ref),
-          // tooltip: 'Fix User Business IDs',
-          // ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search users...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded),
-                        onPressed: () {
-                          setState(() {
-                            _searchQuery = '';
-                            _searchController.clear();
-                          });
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: ViberantColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-              onChanged: (value) => setState(() => _searchQuery = value),
-            ),
-          ),
-
-          // User List
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .where('businessId', isEqualTo: businessId)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final users = snapshot.data!.docs;
-
-                // Filter users based on search query
-                final filteredUsers = users.where((userDoc) {
-                  final user = UserEntity.fromMap(
-                    userDoc.data() as Map<String, dynamic>,
-                  );
-                  return _searchQuery.isEmpty ||
-                      user.displayName.toLowerCase().contains(
-                        _searchQuery.toLowerCase(),
-                      ) ||
-                      user.email.toLowerCase().contains(
-                        _searchQuery.toLowerCase(),
-                      );
-                }).toList();
-
-                if (filteredUsers.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.people_outline_rounded,
-                          size: 64,
-                          color: ViberantColors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'No users found'
-                              : 'No users match your search',
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            color: ViberantColors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'Add your first staff member'
-                              : 'Try a different search term',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: ViberantColors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: filteredUsers.length,
-                  itemBuilder: (context, index) {
-                    final user = UserEntity.fromMap(
-                      filteredUsers[index].data() as Map<String, dynamic>,
-                    );
-
-                    return _UserListItem(
-                          user: user,
-                          isCurrentUser: user.id == authState.user.id,
-                          onEdit: () => _showEditUserDialog(context, ref, user),
-                          onDelete: () =>
-                              _showDeleteConfirmation(context, ref, user),
-                        )
-                        .animate()
-                        .fadeIn(delay: (index * 100).ms)
-                        .slideY(begin: 0.1);
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAddUserDialog(
-    BuildContext context,
-    WidgetRef ref,
-    UserEntity currentUser,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => AddUserDialog(businessId: currentUser.businessId),
-    );
-  }
-
-  void _showEditUserDialog(
-    BuildContext context,
-    WidgetRef ref,
-    UserEntity user,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => EditUserDialog(user: user),
-    );
-  }
-
-  void _showDeleteConfirmation(
-    BuildContext context,
-    WidgetRef ref,
-    UserEntity user,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete User'),
-        content: Text(
-          'Are you sure you want to delete ${user.displayName}? This action cannot be undone.',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => _deleteUser(context, ref, user),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+        backgroundColor: scheme.surfaceContainerLowest,
+        elevation: 0,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () =>
+            _showAddUserSheet(context, ref, authState.user.businessId),
+        icon: const Icon(Icons.person_add_rounded),
+        label: Text(
+          'Add Staff',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: StreamBuilder<List<UserEntity>>(
+        stream: repo.getBusinessUsers(authState.user.businessId),
+        builder: (ctx, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: ShimmerList(count: 6),
+            );
+          }
+          if (snapshot.hasError) {
+            return EmptyState(
+              icon: Icons.error_outline_rounded,
+              title: 'Failed to load staff',
+              description: snapshot.error.toString(),
+            );
+          }
+
+          final users = snapshot.data ?? [];
+          if (users.isEmpty) {
+            return const EmptyState(
+              icon: Icons.people_outline_rounded,
+              title: 'No staff yet',
+              description: 'Add staff members using the button below.',
+            );
+          }
+
+          // Sort: admins first, then by name
+          final sorted = [...users]
+            ..sort((a, b) {
+              if (a.isAdmin != b.isAdmin) {
+                return a.isAdmin ? -1 : 1;
+              }
+              return a.displayName.compareTo(b.displayName);
+            });
+
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: sorted.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (_, i) => _UserRow(
+              user: sorted[i],
+              isSelf: sorted[i].id == authState.user.id,
+              onTap: () => _showUserDetailSheet(
+                context,
+                ref,
+                sorted[i],
+                authState.user.id,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  void _deleteUser(BuildContext context, WidgetRef ref, UserEntity user) async {
-    try {
-      final authNotifier = ref.read(authProvider.notifier);
-      await authNotifier.deleteUser(user.id);
-
-      if (mounted) {
-        Navigator.pop(context); // Close confirmation dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('User ${user.displayName} deleted'),
-            backgroundColor: ViberantColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close confirmation dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete user: $e'),
-            backgroundColor: ViberantColors.error,
-          ),
-        );
-      }
-    }
+  void _showAddUserSheet(
+    BuildContext context,
+    WidgetRef ref,
+    String businessId,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _AddUserSheet(businessId: businessId, ref: ref),
+    );
   }
 
-  //void _migrateUsers(BuildContext context, WidgetRef ref) async {
-  // try {
-  // final authNotifier = ref.read(authProvider.notifier);
-  // await authNotifier.migrateUserBusinessIds();
-
-  // ScaffoldMessenger.of(context).showSnackBar(
-  // SnackBar(
-  // content: Text('User business IDs migrated successfully'),
-  //  backgroundColor: ViberantColors.success,
-  // ),
-  // );
-  // } catch (e) {
-  // ScaffoldMessenger.of(context).showSnackBar(
-  // SnackBar(
-  //  content: Text('Migration failed: $e'),
-  // backgroundColor: ViberantColors.error,
-  // ),
-  // );
+  void _showUserDetailSheet(
+    BuildContext context,
+    WidgetRef ref,
+    UserEntity user,
+    String currentUserId,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _UserDetailSheet(
+        user: user,
+        isSelf: user.id == currentUserId,
+        ref: ref,
+      ),
+    );
+  }
 }
-// }
-//}
 
-class _UserListItem extends ConsumerWidget {
+// ─── User row card ─────────────────────────────────────────────────
+class _UserRow extends StatelessWidget {
   final UserEntity user;
-  final bool isCurrentUser;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final bool isSelf;
+  final VoidCallback onTap;
 
-  const _UserListItem({
+  const _UserRow({
     required this.user,
-    required this.isCurrentUser,
-    required this.onEdit,
-    required this.onDelete,
+    required this.isSelf,
+    required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ViberantColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isAdmin = user.role == UserRole.admin;
+
+    return ViberantCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(14),
       child: Row(
         children: [
-          // User Avatar with Status
           Stack(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: user.isActive
-                      ? ViberantColors.primary.withOpacity(0.1)
-                      : ViberantColors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(24),
+              AppAvatar(name: user.displayName, size: 44),
+              if (!user.isActive)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: scheme.error,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: scheme.surfaceContainerLowest,
+                        width: 2,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.person_rounded,
-                  color: user.isActive
-                      ? ViberantColors.primary
-                      : ViberantColors.grey,
-                  size: 24,
-                ),
-              ),
-              Positioned(right: 0, bottom: 0, child: _buildUserStatus(user)),
             ],
           ),
-          const SizedBox(width: 16),
-
-          // User Info
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Text(
-                      user.displayName,
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: user.isActive
-                            ? ViberantColors.onSurface
-                            : ViberantColors.grey,
+                    Expanded(
+                      child: Text(
+                        user.displayName,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: user.isActive
+                              ? scheme.onSurface
+                              : scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                    if (user.isAdmin) ...[
-                      const SizedBox(width: 8),
+                    if (isSelf) ...[
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 6,
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: ViberantColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'ADMIN',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: ViberantColors.primary,
+                          color: scheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(
+                            ViberantRadius.full,
                           ),
                         ),
-                      ),
-                    ],
-                    if (!user.isActive) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ViberantColors.grey.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
                         child: Text(
-                          'INACTIVE',
+                          'You',
                           style: GoogleFonts.inter(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: ViberantColors.grey,
+                            color: scheme.onSecondaryContainer,
                           ),
                         ),
                       ),
                     ],
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   user.email,
                   style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: ViberantColors.grey,
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      'Joined ${_formatDate(user.createdAt)}',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: ViberantColors.grey,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildUserStatus(user),
-                    const SizedBox(width: 4),
-                    Text(
-                      user.isActive ? 'Active' : 'Inactive',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: user.isActive
-                            ? ViberantColors.success
-                            : ViberantColors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-                // Debug info - show business ID
-                //if (user.businessId != user.id) // Only show if correct
-                //Text(
-                // 'Business: ${user.businessId.substring(0, 8)}...',
-                // style: GoogleFonts.inter(
-                // fontSize: 10,
-                // color: ViberantColors.success,
-                // ),
-                // ),
-                //if (user.businessId == user.id) // Show warning if wrong
-                //Text(
-                //'⚠️ Wrong Business ID',
-                // style: GoogleFonts.inter(
-                // fontSize: 10,
-                // color: ViberantColors.error,
-                // ),
-                //  ),
               ],
             ),
           ),
-
-          // Actions
-          if (!isCurrentUser)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded),
-              onSelected: (value) {
-                if (value == 'edit') onEdit();
-                if (value == 'toggle_active')
-                  _toggleUserActive(context, ref, user);
-                if (value == 'delete') onDelete();
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_rounded, size: 20),
-                      SizedBox(width: 8),
-                      Text('Edit Role'),
-                    ],
-                  ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
                 ),
-                PopupMenuItem(
-                  value: 'toggle_active',
-                  child: Row(
-                    children: [
-                      Icon(
-                        user.isActive
-                            ? Icons.person_off_rounded
-                            : Icons.person_rounded,
-                        size: 20,
-                        color: user.isActive
-                            ? Colors.orange
-                            : ViberantColors.success,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        user.isActive ? 'Deactivate' : 'Activate',
-                        style: TextStyle(
-                          color: user.isActive
-                              ? Colors.orange
-                              : ViberantColors.success,
-                        ),
-                      ),
-                    ],
-                  ),
+                decoration: BoxDecoration(
+                  color: isAdmin
+                      ? scheme.primaryContainer
+                      : scheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(ViberantRadius.full),
                 ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_rounded, size: 20, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Delete User', style: TextStyle(color: Colors.red)),
-                    ],
+                child: Text(
+                  isAdmin ? 'Admin' : 'Staff',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isAdmin
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSurfaceVariant,
                   ),
-                ),
-              ],
-            )
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: ViberantColors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'You',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: ViberantColors.grey,
                 ),
               ),
-            ),
+              const SizedBox(height: 4),
+              if (!user.isActive)
+                StatusChip.error(label: 'Inactive')
+              else
+                StatusChip.success(label: 'Active'),
+            ],
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: scheme.onSurfaceVariant,
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildUserStatus(UserEntity user) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: user.isActive ? ViberantColors.success : ViberantColors.grey,
-        shape: BoxShape.circle,
-        border: Border.all(color: ViberantColors.surface, width: 1.5),
-      ),
-    );
+// ─── User detail / edit bottom sheet ───────────────────────────────
+class _UserDetailSheet extends StatefulWidget {
+  final UserEntity user;
+  final bool isSelf;
+  final WidgetRef ref;
+
+  const _UserDetailSheet({
+    required this.user,
+    required this.isSelf,
+    required this.ref,
+  });
+
+  @override
+  State<_UserDetailSheet> createState() => _UserDetailSheetState();
+}
+
+class _UserDetailSheetState extends State<_UserDetailSheet> {
+  late UserRole _selectedRole;
+  late bool _isActive;
+  bool _isSaving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedRole = widget.user.role;
+    _isActive = widget.user.isActive;
   }
 
-  void _toggleUserActive(
-    BuildContext context,
-    WidgetRef ref,
-    UserEntity user,
-  ) async {
-    try {
-      final authNotifier = ref.read(authProvider.notifier);
-      await authNotifier.toggleUserActive(user.id, !user.isActive);
+  bool get _hasChanges =>
+      _selectedRole != widget.user.role || _isActive != widget.user.isActive;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'User ${user.displayName} ${user.isActive ? 'deactivated' : 'activated'}',
-          ),
-          backgroundColor: ViberantColors.success,
-        ),
-      );
+  Future<void> _save() async {
+    if (!_hasChanges) {
+      Navigator.pop(context);
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
+
+    final repo = widget.ref.read(_authRepoProvider);
+
+    try {
+      // Update role if changed
+      if (_selectedRole != widget.user.role) {
+        await repo.updateUserRole(widget.user.id, _selectedRole);
+      }
+      // Update active status if changed
+      if (_isActive != widget.user.isActive) {
+        await repo.toggleUserActive(widget.user.id, _isActive);
+      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update user: $e'),
-          backgroundColor: ViberantColors.error,
-        ),
-      );
+      setState(() {
+        _isSaving = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(
+          'Remove Staff Member',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Remove ${widget.user.displayName} from your business? '
+          'This will delete their account and cannot be undone.',
+          style: GoogleFonts.inter(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
 
-    if (difference.inDays == 0) return 'Today';
-    if (difference.inDays == 1) return 'Yesterday';
-    if (difference.inDays < 7) return '${difference.inDays} days ago';
-    if (difference.inDays < 30) return '${difference.inDays ~/ 7} weeks ago';
-    return DateFormat('MMM d, y').format(date);
-  }
-}
+    if (confirm != true) return;
 
-// Add User Dialog - UPDATED
-class AddUserDialog extends StatefulWidget {
-  final String businessId;
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
 
-  const AddUserDialog({super.key, required this.businessId});
-
-  @override
-  State<AddUserDialog> createState() => _AddUserDialogState();
-}
-
-class _AddUserDialogState extends State<AddUserDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _nameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _nameController.dispose();
-    _passwordController.dispose();
-    super.dispose();
+    try {
+      final repo = widget.ref.read(_authRepoProvider);
+      await repo.deleteUser(widget.user.id);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add User'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                prefixIcon: Icon(Icons.email_rounded),
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        top: 20,
+        left: 24,
+        right: 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: scheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter email address';
-                }
-                if (!value.contains('@')) {
-                  return 'Please enter a valid email';
-                }
-                return null;
-              },
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Full Name',
-                prefixIcon: Icon(Icons.person_rounded),
+          ),
+          const SizedBox(height: 20),
+
+          // Header
+          Row(
+            children: [
+              AppAvatar(name: widget.user.displayName, size: 48),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.user.displayName,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      widget.user.email,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter full name';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                prefixIcon: Icon(Icons.lock_rounded),
-              ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter password';
-                }
-                if (value.length < 6) {
-                  return 'Password must be at least 6 characters';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
+              // Delete button — not shown for self
+              if (!widget.isSelf)
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    color: scheme.error,
+                    size: 20,
+                  ),
+                  onPressed: _isSaving ? null : _delete,
+                  style: IconButton.styleFrom(
+                    backgroundColor: scheme.errorContainer.withValues(
+                      alpha: 0.4,
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    minimumSize: const Size(36, 36),
+                  ),
+                  tooltip: 'Remove staff member',
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // Error banner
+          if (_error != null) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: ViberantColors.primary.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(8),
+                color: scheme.errorContainer,
+                borderRadius: BorderRadius.circular(ViberantRadius.md),
               ),
               child: Row(
                 children: [
                   Icon(
-                    Icons.info_outline_rounded,
-                    color: ViberantColors.primary,
+                    Icons.error_outline_rounded,
                     size: 16,
+                    color: scheme.onErrorContainer,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Staff users can only access POS functions',
+                      _error!,
                       style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: ViberantColors.grey,
+                        fontSize: 13,
+                        color: scheme.onErrorContainer,
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 16),
           ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _isLoading ? null : _addUser,
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Add User'),
-        ),
-      ],
-    );
-  }
 
-  void _addUser() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-
-      try {
-        final authNotifier = ProviderScope.containerOf(
-          context,
-        ).read(authProvider.notifier);
-
-        await authNotifier.createUserAccount(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          displayName: _nameController.text.trim(),
-          businessId: widget.businessId,
-        );
-
-        if (mounted) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('User ${_emailController.text} added successfully'),
-              backgroundColor: ViberantColors.success,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to add user: $e'),
-              backgroundColor: ViberantColors.error,
-            ),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
-      }
-    }
-  }
-}
-
-// Edit User Dialog remains the same...
-class EditUserDialog extends StatefulWidget {
-  final UserEntity user;
-
-  const EditUserDialog({super.key, required this.user});
-
-  @override
-  State<EditUserDialog> createState() => _EditUserDialogState();
-}
-
-class _EditUserDialogState extends State<EditUserDialog> {
-  late UserRole _selectedRole;
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedRole = widget.user.role;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit User'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+          // Role selector
           Text(
-            widget.user.email,
+            'Role',
             style: GoogleFonts.inter(
+              fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: ViberantColors.onSurface,
+              color: scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            widget.user.displayName,
-            style: GoogleFonts.inter(color: ViberantColors.grey),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<UserRole>(
-            initialValue: _selectedRole,
-            items: UserRole.values.map((role) {
-              return DropdownMenuItem(
-                value: role,
-                child: Text(
-                  role == UserRole.admin ? 'Admin' : 'Staff User',
-                  style: GoogleFonts.inter(),
+          Row(
+            children: [
+              Expanded(
+                child: _RoleTile(
+                  label: 'Staff',
+                  description: 'POS access only',
+                  icon: Icons.person_rounded,
+                  isSelected: _selectedRole == UserRole.user,
+                  // Can't demote yourself
+                  isDisabled: widget.isSelf,
+                  onTap: widget.isSelf
+                      ? null
+                      : () => setState(() => _selectedRole = UserRole.user),
                 ),
-              );
-            }).toList(),
-            onChanged: _isLoading
-                ? null
-                : (value) => setState(() => _selectedRole = value!),
-            decoration: const InputDecoration(
-              labelText: 'Role',
-              prefixIcon: Icon(Icons.people_rounded),
-            ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _RoleTile(
+                  label: 'Admin',
+                  description: 'Full access',
+                  icon: Icons.admin_panel_settings_rounded,
+                  isSelected: _selectedRole == UserRole.admin,
+                  isDisabled: widget.isSelf,
+                  onTap: widget.isSelf
+                      ? null
+                      : () => setState(() => _selectedRole = UserRole.admin),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: ViberantColors.primary.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(8),
-            ),
+
+          const SizedBox(height: 20),
+
+          // Active toggle
+          ViberantCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
                 Icon(
-                  Icons.info_outline_rounded,
-                  color: ViberantColors.primary,
-                  size: 16,
+                  _isActive ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                  size: 20,
+                  color: _isActive ? ViberantColors.success : scheme.error,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    _selectedRole == UserRole.admin
-                        ? 'Admins have full access to all features'
-                        : 'Staff users can only access POS functions',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: ViberantColors.grey,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Account Active',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      Text(
+                        _isActive
+                            ? 'Staff member can sign in'
+                            : 'Staff member cannot sign in',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                Switch(
+                  value: _isActive,
+                  // Can't deactivate yourself
+                  onChanged: widget.isSelf
+                      ? null
+                      : (v) => setState(() => _isActive = v),
+                  activeColor: scheme.primary,
                 ),
               ],
             ),
           ),
+
+          if (widget.isSelf) ...[
+            const SizedBox(height: 8),
+            Text(
+              'You cannot edit your own role or deactivate your own account.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // Save button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _hasChanges
+                    ? scheme.primary
+                    : scheme.surfaceContainerHigh,
+                foregroundColor: _hasChanges
+                    ? scheme.onPrimary
+                    : scheme.onSurfaceVariant,
+                minimumSize: const Size(double.infinity, 52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ViberantRadius.card),
+                ),
+                elevation: 0,
+              ),
+              child: _isSaving
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(scheme.onPrimary),
+                      ),
+                    )
+                  : Text(
+                      _hasChanges ? 'Save Changes' : 'Done',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+            ),
+          ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _isLoading ? null : _updateUser,
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Update'),
-        ),
-      ],
     );
   }
+}
 
-  void _updateUser() async {
-    setState(() => _isLoading = true);
+// ─── Role selection tile ────────────────────────────────────────────
+class _RoleTile extends StatelessWidget {
+  final String label;
+  final String description;
+  final IconData icon;
+  final bool isSelected;
+  final bool isDisabled;
+  final VoidCallback? onTap;
 
-    try {
-      final authNotifier = ProviderScope.containerOf(
-        context,
-      ).read(authProvider.notifier);
+  const _RoleTile({
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.isSelected,
+    required this.isDisabled,
+    this.onTap,
+  });
 
-      await authNotifier.updateUserRole(widget.user.id, _selectedRole);
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
 
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'User role updated to ${_selectedRole == UserRole.admin ? 'Admin' : 'Staff'}',
+    return GestureDetector(
+      onTap: isDisabled ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? scheme.primary.withValues(alpha: 0.08)
+              : scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(ViberantRadius.card),
+          border: isSelected
+              ? Border.all(color: scheme.primary, width: 1.5)
+              : Border.all(color: Colors.transparent, width: 1.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: isSelected
+                  ? scheme.primary
+                  : isDisabled
+                  ? scheme.onSurfaceVariant.withValues(alpha: 0.4)
+                  : scheme.onSurfaceVariant,
             ),
-            backgroundColor: ViberantColors.success,
-          ),
-        );
-      }
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isSelected
+                    ? scheme.primary
+                    : isDisabled
+                    ? scheme.onSurfaceVariant.withValues(alpha: 0.4)
+                    : scheme.onSurface,
+              ),
+            ),
+            Text(
+              description,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: isDisabled
+                    ? scheme.onSurfaceVariant.withValues(alpha: 0.3)
+                    : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Add user sheet (unchanged from before) ────────────────────────
+class _AddUserSheet extends StatefulWidget {
+  final String businessId;
+  final WidgetRef ref;
+
+  const _AddUserSheet({required this.businessId, required this.ref});
+
+  @override
+  State<_AddUserSheet> createState() => _AddUserSheetState();
+}
+
+class _AddUserSheetState extends State<_AddUserSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _obscure = true;
+  bool _isLoading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await widget.ref
+          .read(authRepositoryProvider)
+          .createUserAccount(
+            email: _emailCtrl.text.trim(),
+            password: _passCtrl.text,
+            displayName: _nameCtrl.text.trim(),
+            businessId: widget.businessId,
+          );
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update user: $e'),
-            backgroundColor: ViberantColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() {
+        _isLoading = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        top: 20,
+        left: 24,
+        right: 24,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Add Staff Member',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (_error != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(ViberantRadius.md),
+                ),
+                child: Text(
+                  _error!,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: scheme.onErrorContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            TextFormField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Full Name',
+                prefixIcon: Icon(Icons.person_outline_rounded, size: 18),
+              ),
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                hintText: 'Email Address',
+                prefixIcon: Icon(Icons.email_outlined, size: 18),
+              ),
+              validator: (v) =>
+                  v == null || !v.contains('@') ? 'Invalid email' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _passCtrl,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                hintText: 'Password',
+                prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 18,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              validator: (v) =>
+                  v == null || v.length < 6 ? 'Minimum 6 characters' : null,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _submit,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Text('Add Staff Member'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

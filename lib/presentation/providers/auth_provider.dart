@@ -1,4 +1,5 @@
 // lib/presentation/providers/auth_provider.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -33,10 +34,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         password,
       );
       state = AuthAuthenticated(user);
-      print('✅ Login successful for: ${user.email}');
-      print('👤 User role: ${user.role}');
+      debugPrint('✅ Login successful for: ${user.email}');
+      debugPrint('👤 User role: ${user.role}');
     } catch (e) {
-      print('❌ Login failed: $e');
+      debugPrint('❌ Login failed: $e');
       state = AuthError(e.toString());
     }
   }
@@ -61,11 +62,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         phoneNumber: phoneNumber,
       );
       state = AuthAuthenticated(user);
-      print('✅ Sign up successful for: ${user.email}');
-      print('👤 User role: ${user.role}');
-      print('🏢 Business: ${user.businessName}');
+      debugPrint('✅ Sign up successful for: ${user.email}');
+      debugPrint('👤 User role: ${user.role}');
+      debugPrint('🏢 Business: ${user.businessName}');
     } catch (e) {
-      print('❌ Sign up failed: $e');
+      debugPrint('❌ Sign up failed: $e');
       state = AuthError(e.toString());
     }
   }
@@ -95,10 +96,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         businessId: businessId,
         phoneNumber: phoneNumber,
       );
-      print('✅ User account created: ${user.email}');
-      print('🏢 User assigned to business: ${user.businessId}');
+      debugPrint('✅ User account created: ${user.email}');
+      debugPrint('🏢 User assigned to business: ${user.businessId}');
     } catch (e) {
-      print('❌ User creation failed: $e');
+      debugPrint('❌ User creation failed: $e');
       rethrow;
     }
   }
@@ -121,9 +122,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     try {
       await _authRepository.deleteUser(userId);
-      print('✅ User deleted successfully: $userId');
+      debugPrint('✅ User deleted successfully: $userId');
     } catch (e) {
-      print('❌ User deletion failed: $e');
+      debugPrint('❌ User deletion failed: $e');
       rethrow;
     }
   }
@@ -146,9 +147,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     try {
       await _authRepository.toggleUserActive(userId, isActive);
-      print('✅ User active status updated: $userId -> $isActive');
+      debugPrint('✅ User active status updated: $userId -> $isActive');
     } catch (e) {
-      print('❌ User status update failed: $e');
+      debugPrint('❌ User status update failed: $e');
       rethrow;
     }
   }
@@ -158,7 +159,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       await _authRepository.signOut();
       state = AuthUnauthenticated();
-      print('✅ Signed out successfully');
+      debugPrint('✅ Signed out successfully');
     } catch (e) {
       state = AuthError('Logout failed: $e');
     }
@@ -170,14 +171,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final user = await _authRepository.getCurrentUser();
       if (user != null) {
         state = AuthAuthenticated(user);
-        print('✅ User already authenticated: ${user.email}');
-        print('👤 User role: ${user.role}');
+        debugPrint('✅ User already authenticated: ${user.email}');
+        debugPrint('👤 User role: ${user.role}');
       } else {
         state = AuthUnauthenticated();
-        print('🔐 No user authenticated');
+        debugPrint('🔐 No user authenticated');
       }
     } catch (e) {
-      print('❌ Auth check failed: $e');
+      debugPrint('❌ Auth check failed: $e');
       state = AuthUnauthenticated();
     }
   }
@@ -248,7 +249,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       return await _authRepository.isBusinessNameAvailable(businessName);
     } catch (e) {
-      print('❌ Business name check failed: $e');
+      debugPrint('❌ Business name check failed: $e');
       return false;
     }
   }
@@ -277,9 +278,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await checkAuthStatus(); // Refresh auth state
       }
 
-      print('✅ User role updated to: $newRole');
+      debugPrint('✅ User role updated to: $newRole');
     } catch (e) {
-      print('❌ Role update failed: $e');
+      debugPrint('❌ Role update failed: $e');
       rethrow;
     }
   }
@@ -288,9 +289,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _authRepository.sendPasswordResetEmail(email);
-      print('✅ Password reset email sent to: $email');
+      debugPrint('✅ Password reset email sent to: $email');
     } catch (e) {
-      print('❌ Password reset failed: $e');
+      debugPrint('❌ Password reset failed: $e');
       rethrow;
     }
   }
@@ -325,9 +326,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         currentUser.businessId,
         currentUser.businessName,
       );
-      print('✅ User migration completed successfully');
+      debugPrint('✅ User migration completed successfully');
     } catch (e) {
-      print('❌ User migration failed: $e');
+      debugPrint('❌ User migration failed: $e');
       rethrow;
     }
   }

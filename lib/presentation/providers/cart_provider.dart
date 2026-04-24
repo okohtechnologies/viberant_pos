@@ -1,10 +1,15 @@
-// lib/presentation/providers/pos/cart_provider.dart
+// lib/presentation/providers/cart_provider.dart
+// CHANGED: saleRepositoryProvider removed from this file.
+// It now lives in lib/presentation/providers/repositories/sale_repository_provider.dart
+// Import it from there wherever needed.
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hooks_riverpod/legacy.dart';
-import '../../data/repositories/sale_repository.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import '../../domain/entities/cart_item_entity.dart';
 import '../../domain/entities/product_entity.dart';
 import '../../domain/entities/sale_entity.dart';
+import '../../data/repositories/sale_repository.dart';
 
 final cartProvider = StateNotifierProvider<CartNotifier, List<CartItemEntity>>((
   ref,
@@ -12,24 +17,17 @@ final cartProvider = StateNotifierProvider<CartNotifier, List<CartItemEntity>>((
   return CartNotifier();
 });
 
-final saleRepositoryProvider = Provider<SaleRepository>((ref) {
-  return SaleRepository();
-});
-
 class CartNotifier extends StateNotifier<List<CartItemEntity>> {
   CartNotifier() : super([]);
 
   void addProduct(ProductEntity product, {int quantity = 1, String? notes}) {
-    final existingIndex = state.indexWhere(
-      (item) => item.product.id == product.id,
-    );
-
-    if (existingIndex != -1) {
-      final updatedItem = state[existingIndex].copyWith(
-        quantity: state[existingIndex].quantity + quantity,
-        notes: notes ?? state[existingIndex].notes,
-      );
-      state = [...state]..[existingIndex] = updatedItem;
+    final idx = state.indexWhere((i) => i.product.id == product.id);
+    if (idx != -1) {
+      state = [...state]
+        ..[idx] = state[idx].copyWith(
+          quantity: state[idx].quantity + quantity,
+          notes: notes ?? state[idx].notes,
+        );
     } else {
       state = [
         ...state,
@@ -43,25 +41,23 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
       removeProduct(productId);
       return;
     }
-    final index = state.indexWhere((item) => item.product.id == productId);
-    if (index != -1) {
-      state = [...state]
-        ..[index] = state[index].copyWith(quantity: newQuantity);
+    final idx = state.indexWhere((i) => i.product.id == productId);
+    if (idx != -1) {
+      state = [...state]..[idx] = state[idx].copyWith(quantity: newQuantity);
     }
   }
 
   void removeProduct(String productId) {
-    state = state.where((item) => item.product.id != productId).toList();
+    state = state.where((i) => i.product.id != productId).toList();
   }
 
   void clearCart() => state = [];
 
-  double get subtotal => state.fold(0, (sum, item) => sum + item.subtotal);
+  double get subtotal => state.fold(0, (s, i) => s + i.subtotal);
   double get taxAmount => subtotal * 0.03;
   double get totalAmount => subtotal + taxAmount;
-  int get totalItems => state.fold(0, (sum, item) => sum + item.quantity);
+  int get totalItems => state.fold(0, (s, i) => s + i.quantity);
 
-  /// Process payment and return the created sale
   Future<SaleEntity> processPayment({
     required String businessId,
     required String cashierId,
@@ -72,8 +68,8 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
     String? customerName,
   }) async {
     if (state.isEmpty) throw Exception('Cart is empty');
-    print('📌 Processing sale for business: ${businessId}');
-    print('📌 Cashier: ${cashierName} (ID: ${cashierId})');
+
+    debugPrint('📌 Processing sale for business: $businessId');
 
     final sale = SaleEntity(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -94,37 +90,26 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
     );
 
     try {
-      // Save the sale to database
       await saleRepository.processSale(sale);
-
-      // Clear cart
       clearCart();
-
-      print('✅ Payment processed and cart cleared');
-
-      // Return the sale for receipt generation
+      debugPrint('✅ Payment processed and cart cleared');
       return sale;
-    } catch (e, stackTrace) {
-      print('❌ Payment failed: $e');
-      print(stackTrace);
+    } catch (e, st) {
+      debugPrint('❌ Payment failed: $e\n$st');
       rethrow;
     }
   }
 }
 
-/// Cart summary
 final cartSummaryProvider = Provider<CartSummary>((ref) {
   final cart = ref.watch(cartProvider);
-  final subtotal = cart.fold(0.0, (sum, item) => sum + item.subtotal);
-  final taxAmount = subtotal * 0.03;
-  final totalAmount = subtotal + taxAmount;
-  final totalItems = cart.fold(0, (sum, item) => sum + item.quantity);
-
+  final subtotal = cart.fold(0.0, (s, i) => s + i.subtotal);
+  final tax = subtotal * 0.03;
   return CartSummary(
     subtotal: subtotal,
-    taxAmount: taxAmount,
-    totalAmount: totalAmount,
-    totalItems: totalItems,
+    taxAmount: tax,
+    totalAmount: subtotal + tax,
+    totalItems: cart.fold(0, (s, i) => s + i.quantity),
   );
 });
 

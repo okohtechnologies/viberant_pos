@@ -1,5 +1,6 @@
 // lib/data/repositories/product_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '../../domain/entities/product_entity.dart';
 
 class ProductRepository {
@@ -10,7 +11,7 @@ class ProductRepository {
 
   // Get products stream for real-time updates
   Stream<List<ProductEntity>> getProductsStream(String businessId) {
-    print('🔄 Getting products stream for business: $businessId');
+    debugPrint('🔄 Getting products stream for business: $businessId');
 
     return _firestore
         .collection('businesses')
@@ -20,13 +21,15 @@ class ProductRepository {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          print('📦 Products stream update: ${snapshot.docs.length} products');
+          debugPrint(
+            '📦 Products stream update: ${snapshot.docs.length} products',
+          );
           return snapshot.docs
               .map((doc) => ProductEntity.fromFirestore(doc))
               .toList();
         })
         .handleError((error) {
-          print('❌ Products stream error: $error');
+          debugPrint('❌ Products stream error: $error');
           throw error;
         });
   }
@@ -45,7 +48,7 @@ class ProductRepository {
               .toList(),
         )
         .handleError((error) {
-          print('❌ All products error: $error');
+          debugPrint('❌ All products error: $error');
           throw error;
         });
   }
@@ -65,7 +68,7 @@ class ProductRepository {
               .toList(),
         )
         .handleError((error) {
-          print('❌ Low stock products error: $error');
+          debugPrint('❌ Low stock products error: $error');
           throw error;
         });
   }
@@ -85,7 +88,7 @@ class ProductRepository {
               .toList(),
         )
         .handleError((error) {
-          print('❌ Out of stock products error: $error');
+          debugPrint('❌ Out of stock products error: $error');
           throw error;
         });
   }
@@ -93,7 +96,7 @@ class ProductRepository {
   // Add new product
   Future<void> addProduct(String businessId, ProductEntity product) async {
     try {
-      print('➕ Adding product: ${product.name} to business: $businessId');
+      debugPrint('➕ Adding product: ${product.name} to business: $businessId');
 
       final productData = product.toMap();
       await _firestore
@@ -103,9 +106,9 @@ class ProductRepository {
           .doc(product.id)
           .set(productData);
 
-      print('✅ Product added successfully: ${product.name}');
+      debugPrint('✅ Product added successfully: ${product.name}');
     } catch (e) {
-      print('❌ Failed to add product: $e');
+      debugPrint('❌ Failed to add product: $e');
       throw Exception('Failed to add product: $e');
     }
   }
@@ -113,7 +116,7 @@ class ProductRepository {
   // Update product
   Future<void> updateProduct(String businessId, ProductEntity product) async {
     try {
-      print('🔄 Updating product: ${product.name}');
+      debugPrint('🔄 Updating product: ${product.name}');
 
       final updatedProduct = product.copyWith(updatedAt: DateTime.now());
       await _firestore
@@ -123,9 +126,9 @@ class ProductRepository {
           .doc(product.id)
           .update(updatedProduct.toMap());
 
-      print('✅ Product updated successfully: ${product.name}');
+      debugPrint('✅ Product updated successfully: ${product.name}');
     } catch (e) {
-      print('❌ Failed to update product: $e');
+      debugPrint('❌ Failed to update product: $e');
       throw Exception('Failed to update product: $e');
     }
   }
@@ -133,7 +136,7 @@ class ProductRepository {
   // Delete product (soft delete)
   Future<void> deleteProduct(String businessId, String productId) async {
     try {
-      print('🗑️ Soft deleting product: $productId');
+      debugPrint('🗑️ Soft deleting product: $productId');
 
       await _firestore
           .collection('businesses')
@@ -142,9 +145,9 @@ class ProductRepository {
           .doc(productId)
           .update({'isActive': false, 'updatedAt': Timestamp.now()});
 
-      print('✅ Product soft deleted: $productId');
+      debugPrint('✅ Product soft deleted: $productId');
     } catch (e) {
-      print('❌ Failed to delete product: $e');
+      debugPrint('❌ Failed to delete product: $e');
       throw Exception('Failed to delete product: $e');
     }
   }
@@ -156,7 +159,7 @@ class ProductRepository {
     int newStock,
   ) async {
     try {
-      print('📦 Updating stock for product: $productId to $newStock');
+      debugPrint('📦 Updating stock for product: $productId to $newStock');
 
       await _firestore
           .collection('businesses')
@@ -165,9 +168,9 @@ class ProductRepository {
           .doc(productId)
           .update({'stock': newStock, 'updatedAt': Timestamp.now()});
 
-      print('✅ Stock updated successfully');
+      debugPrint('✅ Stock updated successfully');
     } catch (e) {
-      print('❌ Failed to update stock: $e');
+      debugPrint('❌ Failed to update stock: $e');
       throw Exception('Failed to update stock: $e');
     }
   }
@@ -178,7 +181,9 @@ class ProductRepository {
     String query,
   ) async {
     try {
-      print('🔍 Searching products for: "$query" in business: $businessId');
+      debugPrint(
+        '🔍 Searching products for: "$query" in business: $businessId',
+      );
 
       if (query.isEmpty) {
         // Return all active products if query is empty
@@ -196,13 +201,13 @@ class ProductRepository {
           .where('searchKeywords', arrayContains: searchQuery)
           .get();
 
-      print('🔍 Search found: ${snapshot.docs.length} products');
+      debugPrint('🔍 Search found: ${snapshot.docs.length} products');
 
       return snapshot.docs
           .map((doc) => ProductEntity.fromFirestore(doc))
           .toList();
     } catch (e) {
-      print('❌ Search products error: $e');
+      debugPrint('❌ Search products error: $e');
       throw Exception('Search failed: $e');
     }
   }
@@ -210,7 +215,7 @@ class ProductRepository {
   // Get products once (for search and initial load)
   Future<List<ProductEntity>> getProducts(String businessId) async {
     try {
-      print('📋 Getting products once for business: $businessId');
+      debugPrint('📋 Getting products once for business: $businessId');
 
       final snapshot = await _firestore
           .collection('businesses')
@@ -220,13 +225,13 @@ class ProductRepository {
           .orderBy('name')
           .get();
 
-      print('📋 Found ${snapshot.docs.length} active products');
+      debugPrint('📋 Found ${snapshot.docs.length} active products');
 
       return snapshot.docs
           .map((doc) => ProductEntity.fromFirestore(doc))
           .toList();
     } catch (e) {
-      print('❌ Get products error: $e');
+      debugPrint('❌ Get products error: $e');
       throw Exception('Failed to get products: $e');
     }
   }
@@ -237,7 +242,7 @@ class ProductRepository {
     String productId,
   ) async {
     try {
-      print('🎯 Getting product by ID: $productId');
+      debugPrint('🎯 Getting product by ID: $productId');
 
       final doc = await _firestore
           .collection('businesses')
@@ -247,14 +252,14 @@ class ProductRepository {
           .get();
 
       if (doc.exists) {
-        print('🎯 Product found: ${doc.data()?['name']}');
+        debugPrint('🎯 Product found: ${doc.data()?['name']}');
         return ProductEntity.fromFirestore(doc);
       } else {
-        print('🎯 Product not found: $productId');
+        debugPrint('🎯 Product not found: $productId');
         return null;
       }
     } catch (e) {
-      print('❌ Get product by ID error: $e');
+      debugPrint('❌ Get product by ID error: $e');
       throw Exception('Failed to get product: $e');
     }
   }
@@ -277,7 +282,7 @@ class ProductRepository {
               .toList(),
         )
         .handleError((error) {
-          print('❌ Products by category error: $error');
+          debugPrint('❌ Products by category error: $error');
           throw error;
         });
   }
@@ -285,7 +290,7 @@ class ProductRepository {
   // Get categories
   Future<List<String>> getCategories(String businessId) async {
     try {
-      print('📂 Getting categories for business: $businessId');
+      debugPrint('📂 Getting categories for business: $businessId');
 
       final snapshot = await _firestore
           .collection('businesses')
@@ -301,11 +306,11 @@ class ProductRepository {
 
       categories.sort();
 
-      print('📂 Found ${categories.length} categories: $categories');
+      debugPrint('📂 Found ${categories.length} categories: $categories');
 
       return categories;
     } catch (e) {
-      print('❌ Get categories error: $e');
+      debugPrint('❌ Get categories error: $e');
       throw Exception('Failed to get categories: $e');
     }
   }
@@ -316,7 +321,7 @@ class ProductRepository {
     List<ProductEntity> products,
   ) async {
     try {
-      print('📦 Bulk updating ${products.length} products');
+      debugPrint('📦 Bulk updating ${products.length} products');
 
       final batch = _firestore.batch();
 
@@ -331,9 +336,9 @@ class ProductRepository {
       }
 
       await batch.commit();
-      print('✅ Bulk update completed successfully');
+      debugPrint('✅ Bulk update completed successfully');
     } catch (e) {
-      print('❌ Bulk update error: $e');
+      debugPrint('❌ Bulk update error: $e');
       throw Exception('Bulk update failed: $e');
     }
   }
@@ -361,7 +366,7 @@ class ProductRepository {
 
       return snapshot.docs.isEmpty;
     } catch (e) {
-      print('❌ Product name uniqueness check error: $e');
+      debugPrint('❌ Product name uniqueness check error: $e');
       throw Exception('Failed to check product name: $e');
     }
   }

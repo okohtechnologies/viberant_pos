@@ -1,5 +1,6 @@
 // lib/data/repositories/sale_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '../../domain/entities/sale_entity.dart';
 
 class SaleRepository {
@@ -8,77 +9,107 @@ class SaleRepository {
   SaleRepository({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance;
 
-  /// Record a new sale and update product stocks atomically
+  // ─────────────────────────────────────────────
+  //  WRITE — process a sale atomically
+  //  FIX: replaced batch() with runTransaction() to eliminate the
+  //  read-then-write race condition that could cause stock to go negative
+  //  when two cashiers sell the last unit simultaneously.
+  // ─────────────────────────────────────────────
   Future<void> processSale(SaleEntity sale) async {
     try {
-      final batch = _firestore.batch();
+      await _firestore.runTransaction((transaction) async {
+        // 1. Build all product refs up front
+        final productRefs = sale.items
+            .map(
+              (item) => _firestore
+                  .collection('businesses')
+                  .doc(sale.businessId)
+                  .collection('products')
+                  .doc(item.product.id),
+            )
+            .toList();
 
-      // Reference for the sale document
-      final saleRef = _firestore
-          .collection('businesses')
-          .doc(sale.businessId)
-          .collection('sales')
-          .doc(sale.id);
+        // 2. Read all product docs inside the transaction (ensures isolation)
+        final productSnaps = await Future.wait(
+          productRefs.map((ref) => transaction.get(ref)),
+        );
 
-      batch.set(saleRef, sale.toMap());
+        // 3. Validate all stocks BEFORE any writes
+        for (int i = 0; i < sale.items.length; i++) {
+          final item = sale.items[i];
+          final snap = productSnaps[i];
+          if (!snap.exists) {
+            throw Exception('Product not found: ${item.product.name}');
+          }
+          final stock =
+              ((snap.data() as Map<String, dynamic>)['stock'] ?? 0) as num;
+          if (stock.toInt() < item.quantity) {
+            throw Exception(
+              'Insufficient stock for ${item.product.name}. '
+              'Have: ${stock.toInt()}, Need: ${item.quantity}',
+            );
+          }
+        }
 
-      // Update product stocks
-      for (final cartItem in sale.items) {
-        final productRef = _firestore
+        // 4. Write the sale document
+        final saleRef = _firestore
             .collection('businesses')
             .doc(sale.businessId)
-            .collection('products')
-            .doc(cartItem.product.id);
+            .collection('sales')
+            .doc(sale.id);
+        transaction.set(saleRef, sale.toMap());
 
-        // Fetch product from Firestore to verify it exists
-        final productSnap = await productRef.get();
-        if (!productSnap.exists) {
-          throw Exception(
-            'Product not found in database: ${cartItem.product.name}',
+        // 5. Write customer upsert if customerName provided
+        if (sale.customerName != null && sale.customerName!.isNotEmpty) {
+          final customerKey = sale.customerName!.toLowerCase().replaceAll(
+            ' ',
+            '_',
           );
+          final customerRef = _firestore
+              .collection('businesses')
+              .doc(sale.businessId)
+              .collection('customers')
+              .doc(customerKey);
+          transaction.set(customerRef, {
+            'name': sale.customerName,
+            'totalSpent': FieldValue.increment(sale.finalAmount),
+            'visits': FieldValue.increment(1),
+            'lastVisit': Timestamp.fromDate(sale.saleDate),
+          }, SetOptions(merge: true));
         }
 
-        final currentStock = (productSnap.data()?['stock'] ?? 0).toInt();
-        final newStock = currentStock - cartItem.quantity;
-
-        if (newStock < 0) {
-          throw Exception(
-            'Insufficient stock for ${cartItem.product.name}. Available: $currentStock, Requested: ${cartItem.quantity}',
-          );
+        // 6. Decrement stocks (atomic increment — no computed newStock value)
+        for (int i = 0; i < sale.items.length; i++) {
+          transaction.update(productRefs[i], {
+            'stock': FieldValue.increment(-sale.items[i].quantity),
+            'updatedAt': Timestamp.now(),
+          });
         }
+      });
 
-        batch.update(productRef, {
-          'stock': newStock,
-          'updatedAt': Timestamp.now(),
-        });
-      }
-
-      // Commit batch
-      await batch.commit();
-      print('✅ Sale processed and stock updated successfully');
+      debugPrint('✅ Sale processed atomically');
     } catch (e) {
-      print('❌ Failed to process sale: $e');
+      debugPrint('❌ Failed to process sale: $e');
       throw Exception('Failed to process sale: $e');
     }
   }
 
-  /// Stream sales for dashboard
+  // ─────────────────────────────────────────────
+  //  READ — streams
+  // ─────────────────────────────────────────────
+
   Stream<List<SaleEntity>> getSalesStream(String businessId, {int? limit}) {
     var query = _firestore
         .collection('businesses')
         .doc(businessId)
         .collection('sales')
         .orderBy('saleDate', descending: true);
-
     if (limit != null) query = query.limit(limit);
-
     return query.snapshots().map(
-      (snapshot) =>
-          snapshot.docs.map((doc) => SaleEntity.fromFirestore(doc)).toList(),
+      (s) => s.docs.map((d) => SaleEntity.fromFirestore(d)).toList(),
     );
   }
 
-  /// 🔥 NEW: Fetch sales with filters for reports
   Stream<List<SaleEntity>> getSalesWithFilters({
     required String businessId,
     DateTime? startDate,
@@ -94,100 +125,95 @@ class SaleRepository {
         .collection('sales')
         .orderBy('saleDate', descending: true);
 
-    // Apply date filters
     if (startDate != null) {
-      query = query.where('saleDate', isGreaterThanOrEqualTo: startDate);
+      query = query.where(
+        'saleDate',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+      );
     }
     if (endDate != null) {
-      query = query.where('saleDate', isLessThanOrEqualTo: endDate);
+      query = query.where(
+        'saleDate',
+        isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+      );
     }
-
-    // Apply payment method filter
     if (paymentMethod != null) {
       query = query.where(
         'paymentMethod',
-        isEqualTo: _paymentMethodToString(paymentMethod),
+        isEqualTo: paymentMethod.toString().split('.').last,
       );
     }
-
-    // Apply cashier filter
     if (cashierId != null && cashierId.isNotEmpty) {
       query = query.where('cashierId', isEqualTo: cashierId);
     }
-
-    // Apply status filter
     if (status != null) {
-      query = query.where('status', isEqualTo: _saleStatusToString(status));
+      query = query.where(
+        'status',
+        isEqualTo: status.toString().split('.').last,
+      );
     }
-
-    // Apply limit
-    if (limit != null) {
-      query = query.limit(limit);
-    }
+    if (limit != null) query = query.limit(limit);
 
     return query.snapshots().map(
-      (snapshot) =>
-          snapshot.docs.map((doc) => SaleEntity.fromFirestore(doc)).toList(),
+      (s) => s.docs.map((d) => SaleEntity.fromFirestore(d)).toList(),
     );
   }
 
-  /// 🔥 NEW: Get sales summary for dashboard
+  // ─────────────────────────────────────────────
+  //  READ — futures (for report aggregations)
+  // ─────────────────────────────────────────────
+
   Future<Map<String, dynamic>> getSalesSummary({
     required String businessId,
     required DateTime startDate,
     required DateTime endDate,
   }) async {
     try {
-      final salesQuery = await _firestore
+      final snap = await _firestore
           .collection('businesses')
           .doc(businessId)
           .collection('sales')
-          .where('saleDate', isGreaterThanOrEqualTo: startDate)
-          .where('saleDate', isLessThanOrEqualTo: endDate)
+          .where(
+            'saleDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where('saleDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
           .where('status', isEqualTo: 'completed')
           .get();
 
       double totalRevenue = 0;
-      int totalTransactions = salesQuery.docs.length;
       int totalItemsSold = 0;
       final paymentMethodCounts = <String, int>{};
       final dailySales = <String, double>{};
 
-      for (final doc in salesQuery.docs) {
+      for (final doc in snap.docs) {
         try {
           final sale = SaleEntity.fromFirestore(doc);
           totalRevenue += sale.finalAmount;
           totalItemsSold += sale.totalItems;
-
-          // Count payment methods
           final method = sale.paymentMethodString;
           paymentMethodCounts[method] = (paymentMethodCounts[method] ?? 0) + 1;
-
-          // Group by day (YYYY-MM-DD format)
           final dayKey =
               '${sale.saleDate.year}-${sale.saleDate.month.toString().padLeft(2, '0')}-${sale.saleDate.day.toString().padLeft(2, '0')}';
           dailySales[dayKey] = (dailySales[dayKey] ?? 0) + sale.finalAmount;
         } catch (e) {
-          print('Error parsing sale document: $e');
           continue;
         }
       }
 
-      final averageSale = totalTransactions > 0
-          ? totalRevenue / totalTransactions
-          : 0;
-
       return {
         'totalRevenue': totalRevenue,
-        'totalTransactions': totalTransactions,
+        'totalTransactions': snap.docs.length,
         'totalItemsSold': totalItemsSold,
-        'averageSale': averageSale,
+        'averageSale': snap.docs.isNotEmpty
+            ? totalRevenue / snap.docs.length
+            : 0.0,
         'paymentMethodCounts': paymentMethodCounts,
         'dailySales': dailySales,
         'success': true,
       };
     } catch (e) {
-      print('Error getting sales summary: $e');
+      debugPrint('Error getting sales summary: $e');
       return {
         'totalRevenue': 0.0,
         'totalTransactions': 0,
@@ -201,7 +227,6 @@ class SaleRepository {
     }
   }
 
-  /// 🔥 NEW: Get top selling products
   Future<List<Map<String, dynamic>>> getTopSellingProducts({
     required String businessId,
     required DateTime startDate,
@@ -209,157 +234,138 @@ class SaleRepository {
     int limit = 10,
   }) async {
     try {
-      final salesQuery = await _firestore
+      final snap = await _firestore
           .collection('businesses')
           .doc(businessId)
           .collection('sales')
-          .where('saleDate', isGreaterThanOrEqualTo: startDate)
-          .where('saleDate', isLessThanOrEqualTo: endDate)
+          .where(
+            'saleDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where('saleDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
           .where('status', isEqualTo: 'completed')
           .get();
 
       final productSales = <String, Map<String, dynamic>>{};
-
-      for (final doc in salesQuery.docs) {
+      for (final doc in snap.docs) {
         try {
           final sale = SaleEntity.fromFirestore(doc);
           for (final item in sale.items) {
-            final productId = item.product.id;
-            final productName = item.product.name;
-            final quantity = item.quantity;
-            final revenue = item.subtotal;
-
-            if (!productSales.containsKey(productId)) {
-              productSales[productId] = {
-                'id': productId,
-                'name': productName,
+            final id = item.product.id;
+            productSales.putIfAbsent(
+              id,
+              () => {
+                'id': id,
+                'name': item.product.name,
                 'quantity': 0,
                 'revenue': 0.0,
                 'unitPrice': item.product.price,
-              };
-            }
-
-            productSales[productId]!['quantity'] += quantity;
-            productSales[productId]!['revenue'] += revenue;
+              },
+            );
+            productSales[id]!['quantity'] =
+                (productSales[id]!['quantity'] as int) + item.quantity;
+            productSales[id]!['revenue'] =
+                (productSales[id]!['revenue'] as double) + item.subtotal;
           }
-        } catch (e) {
-          print('Error parsing sale for top products: $e');
-          continue;
-        }
+        } catch (_) {}
       }
 
-      // Convert to list and sort by revenue (descending)
-      final productList = productSales.values.toList();
-      productList.sort(
-        (a, b) => (b['revenue'] as double).compareTo(a['revenue'] as double),
-      );
-
-      // Return limited results
-      return productList.take(limit).toList();
+      final list = productSales.values.toList()
+        ..sort(
+          (a, b) => (b['revenue'] as double).compareTo(a['revenue'] as double),
+        );
+      return list.take(limit).toList();
     } catch (e) {
-      print('Error getting top products: $e');
+      debugPrint('Error getting top products: $e');
       return [];
     }
   }
 
-  /// 🔥 NEW: Get sales by hour for today
   Future<Map<String, double>> getTodaySalesByHour(String businessId) async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
     try {
-      final salesQuery = await _firestore
+      final snap = await _firestore
           .collection('businesses')
           .doc(businessId)
           .collection('sales')
-          .where('saleDate', isGreaterThanOrEqualTo: startOfDay)
-          .where('saleDate', isLessThanOrEqualTo: endOfDay)
+          .where(
+            'saleDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
+          )
           .where('status', isEqualTo: 'completed')
           .get();
 
-      final hourlySales = <String, double>{};
-
-      // Initialize all hours with 0
-      for (int hour = 0; hour < 24; hour++) {
-        hourlySales[hour.toString().padLeft(2, '0')] = 0.0;
-      }
-
-      for (final doc in salesQuery.docs) {
+      final hourly = <String, double>{
+        for (int h = 0; h < 24; h++) h.toString().padLeft(2, '0'): 0.0,
+      };
+      for (final doc in snap.docs) {
         try {
           final sale = SaleEntity.fromFirestore(doc);
-          final hour = sale.saleDate.hour.toString().padLeft(2, '0');
-          hourlySales[hour] = (hourlySales[hour] ?? 0) + sale.finalAmount;
-        } catch (e) {
-          continue;
-        }
+          final h = sale.saleDate.hour.toString().padLeft(2, '0');
+          hourly[h] = (hourly[h] ?? 0) + sale.finalAmount;
+        } catch (_) {}
       }
-
-      return hourlySales;
+      return hourly;
     } catch (e) {
-      print('Error getting hourly sales: $e');
+      debugPrint('Error getting hourly sales: $e');
       return {};
     }
   }
 
-  /// 🔥 NEW: Get cashier performance
   Future<List<Map<String, dynamic>>> getCashierPerformance({
     required String businessId,
     required DateTime startDate,
     required DateTime endDate,
   }) async {
     try {
-      final salesQuery = await _firestore
+      final snap = await _firestore
           .collection('businesses')
           .doc(businessId)
           .collection('sales')
-          .where('saleDate', isGreaterThanOrEqualTo: startDate)
-          .where('saleDate', isLessThanOrEqualTo: endDate)
+          .where(
+            'saleDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where('saleDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
           .where('status', isEqualTo: 'completed')
           .get();
 
-      final cashierStats = <String, Map<String, dynamic>>{};
-
-      for (final doc in salesQuery.docs) {
+      final stats = <String, Map<String, dynamic>>{};
+      for (final doc in snap.docs) {
         try {
           final sale = SaleEntity.fromFirestore(doc);
-          final cashierId = sale.cashierId;
-          final cashierName = sale.cashierName;
-
-          if (!cashierStats.containsKey(cashierId)) {
-            cashierStats[cashierId] = {
-              'cashierId': cashierId,
-              'cashierName': cashierName,
+          stats.putIfAbsent(
+            sale.cashierId,
+            () => {
+              'cashierId': sale.cashierId,
+              'cashierName': sale.cashierName,
               'salesCount': 0,
               'totalRevenue': 0.0,
               'totalItems': 0,
-            };
-          }
-
-          cashierStats[cashierId]!['salesCount'] += 1;
-          cashierStats[cashierId]!['totalRevenue'] += sale.finalAmount;
-          cashierStats[cashierId]!['totalItems'] += sale.totalItems;
-        } catch (e) {
-          continue;
-        }
+            },
+          );
+          stats[sale.cashierId]!['salesCount'] =
+              (stats[sale.cashierId]!['salesCount'] as int) + 1;
+          stats[sale.cashierId]!['totalRevenue'] =
+              (stats[sale.cashierId]!['totalRevenue'] as double) +
+              sale.finalAmount;
+          stats[sale.cashierId]!['totalItems'] =
+              (stats[sale.cashierId]!['totalItems'] as int) + sale.totalItems;
+        } catch (_) {}
       }
 
-      // Convert to list and sort by revenue
-      final cashierList = cashierStats.values.toList();
-      cashierList.sort(
+      return stats.values.toList()..sort(
         (a, b) => (b['totalRevenue'] as double).compareTo(
           a['totalRevenue'] as double,
         ),
       );
-
-      return cashierList;
     } catch (e) {
-      print('Error getting cashier performance: $e');
+      debugPrint('Error getting cashier performance: $e');
       return [];
     }
   }
 
-  /// 🔥 NEW: Export sales data
   Future<List<Map<String, dynamic>>> exportSalesData({
     required String businessId,
     DateTime? startDate,
@@ -373,65 +379,38 @@ class SaleRepository {
           .orderBy('saleDate', descending: true);
 
       if (startDate != null) {
-        query = query.where('saleDate', isGreaterThanOrEqualTo: startDate);
+        query = query.where(
+          'saleDate',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+        );
       }
       if (endDate != null) {
-        query = query.where('saleDate', isLessThanOrEqualTo: endDate);
+        query = query.where(
+          'saleDate',
+          isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+        );
       }
 
-      final salesQuery = await query.get();
-
-      final exportData = <Map<String, dynamic>>[];
-
-      for (final doc in salesQuery.docs) {
-        try {
-          final sale = SaleEntity.fromFirestore(doc);
-          exportData.add({
-            'Transaction ID': sale.transactionId,
-            'Date': sale.saleDate.toIso8601String(),
-            'Cashier': sale.cashierName,
-            'Customer': sale.customerName ?? 'Walk-in',
-            'Payment Method': _formatPaymentMethodForExport(sale.paymentMethod),
-            'Items Count': sale.totalItems,
-            'Subtotal': sale.totalAmount,
-            'Tax': sale.taxAmount,
-            'Discount': sale.discountAmount,
-            'Total': sale.finalAmount,
-            'Status': _saleStatusToString(sale.status),
-          });
-        } catch (e) {
-          continue;
-        }
-      }
-
-      return exportData;
+      final snap = await query.get();
+      return snap.docs.map((doc) {
+        final sale = SaleEntity.fromFirestore(doc);
+        return {
+          'Transaction ID': sale.transactionId,
+          'Date': sale.saleDate.toIso8601String(),
+          'Cashier': sale.cashierName,
+          'Customer': sale.customerName ?? 'Walk-in',
+          'Payment Method': sale.paymentMethodString,
+          'Items Count': sale.totalItems,
+          'Subtotal': sale.totalAmount,
+          'Tax': sale.taxAmount,
+          'Discount': sale.discountAmount,
+          'Total': sale.finalAmount,
+          'Status': sale.status.toString().split('.').last,
+        };
+      }).toList();
     } catch (e) {
-      print('Error exporting sales data: $e');
+      debugPrint('Error exporting sales data: $e');
       return [];
-    }
-  }
-
-  // Helper methods for enum conversion
-  String _paymentMethodToString(PaymentMethod method) {
-    return method.toString().split('.').last;
-  }
-
-  String _saleStatusToString(SaleStatus status) {
-    return status.toString().split('.').last;
-  }
-
-  String _formatPaymentMethodForExport(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.cash:
-        return 'Cash';
-      case PaymentMethod.momo:
-        return 'Mobile Money';
-      case PaymentMethod.card:
-        return 'Card';
-      case PaymentMethod.bankTransfer:
-        return 'Bank Transfer';
-      case PaymentMethod.credit:
-        return 'Credit';
     }
   }
 }

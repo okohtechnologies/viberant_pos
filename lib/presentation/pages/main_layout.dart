@@ -2,8 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:viberant_pos/domain/states/auth_state.dart';
-
 import '../../core/theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/navigation_provider.dart';
@@ -12,42 +10,45 @@ import '../pages/pos/pos_page.dart';
 import 'inventory/inventory_page.dart';
 import 'customers/customers_page.dart';
 import 'settings/settings_page.dart';
+import '../../domain/states/auth_state.dart';
 
 class MainLayout extends ConsumerWidget {
   const MainLayout({super.key});
+
+  static const _tabs = [
+    _TabItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
+    _TabItem(icon: Icons.point_of_sale_rounded, label: 'POS'),
+    _TabItem(icon: Icons.inventory_2_rounded, label: 'Inventory'),
+    _TabItem(icon: Icons.people_rounded, label: 'Customers'),
+    _TabItem(icon: Icons.settings_rounded, label: 'Settings'),
+  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
     final currentIndex = ref.watch(navigationProvider);
-    final navigationNotifier = ref.read(navigationProvider.notifier);
+    final nav = ref.read(navigationProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
 
-    // If not authenticated, show login page (shouldn't happen but safety check)
     if (authState is! AuthAuthenticated) {
       return Scaffold(
         body: Center(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 64, color: ViberantColors.error),
-              SizedBox(height: 16),
+              Icon(Icons.lock_outline_rounded, size: 48, color: scheme.error),
+              const SizedBox(height: 16),
               Text(
-                'Authentication Required',
-                style: GoogleFonts.inter(fontSize: 18),
+                'Session expired',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () async {
-                  // Sign out the user
-                  await ref.read(authProvider.notifier).signOut();
-
-                  // Navigate to Login Page
-                  // Using Navigator
-                  if (context.mounted) {
-                    Navigator.pushReplacementNamed(context, '/login');
-                  }
-                },
-                child: Text('Return to Login'),
+                onPressed: () => ref.read(authProvider.notifier).signOut(),
+                child: const Text('Return to Login'),
               ),
             ],
           ),
@@ -55,124 +56,101 @@ class MainLayout extends ConsumerWidget {
       );
     }
 
-    final user = authState.user;
-
     return Scaffold(
-      backgroundColor: ViberantColors.background,
-      appBar: _buildAppBar(currentIndex, user.businessName),
-      body: _buildBody(currentIndex),
-      bottomNavigationBar: _buildBottomNavigationBar(
+      backgroundColor: scheme.surface,
+      appBar: _buildAppBar(
+        context,
         currentIndex,
-        navigationNotifier.setIndex,
+        authState.user.businessName,
+        scheme,
+      ),
+      body: _buildBody(currentIndex),
+      bottomNavigationBar: _buildBottomNav(
+        context,
+        currentIndex,
+        nav.setIndex,
+        scheme,
       ),
     );
   }
 
-  AppBar? _buildAppBar(int currentIndex, String businessName) {
-    final titles = {
-      0: 'Dashboard',
-      1: 'POS',
-      2: 'Inventory',
-      3: 'Customers',
-      4: 'Settings',
-    };
-
+  AppBar _buildAppBar(
+    BuildContext context,
+    int index,
+    String businessName,
+    ColorScheme scheme,
+  ) {
+    const titles = ['Dashboard', 'POS', 'Inventory', 'Customers', 'Settings'];
     return AppBar(
-      backgroundColor: ViberantColors.surface,
+      backgroundColor: scheme.surfaceContainerLowest,
       elevation: 0,
+      scrolledUnderElevation: 1,
+      shadowColor: scheme.outlineVariant,
       title: Text(
-        titles[currentIndex] ?? 'Viberant POS',
-        style: GoogleFonts.poppins(
+        titles[index],
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 20,
           fontWeight: FontWeight.w600,
-          color: ViberantColors.onSurface,
+          color: scheme.onSurface,
         ),
       ),
-      actions: currentIndex == 0 ? _buildDashboardActions() : null,
+      actions: index == 0
+          ? [
+              IconButton(
+                icon: Icon(
+                  Icons.notifications_none_rounded,
+                  color: scheme.onSurfaceVariant,
+                ),
+                onPressed: () {},
+                tooltip: 'Notifications',
+              ),
+            ]
+          : null,
     );
   }
 
-  List<Widget> _buildDashboardActions() {
-    return [
-      IconButton(
-        icon: Icon(Icons.notifications_none_rounded),
-        onPressed: () {},
-        tooltip: 'Notifications',
-      ),
-      IconButton(
-        icon: Icon(Icons.refresh_rounded),
-        onPressed: () {},
-        tooltip: 'Refresh',
-      ),
-    ];
-  }
-
-  Widget _buildBody(int currentIndex) {
-    switch (currentIndex) {
+  Widget _buildBody(int index) {
+    switch (index) {
       case 0:
-        return DashboardPage();
+        return const DashboardPage();
       case 1:
-        return PosPage();
+        return const PosPage();
       case 2:
-        return InventoryPage();
+        return const InventoryPage();
       case 3:
-        return CustomersPage();
+        return const CustomersPage();
       case 4:
-        return SettingsPage();
+        return const SettingsPage();
       default:
-        return DashboardPage();
+        return const DashboardPage();
     }
   }
 
-  Widget _buildBottomNavigationBar(int currentIndex, Function(int) onTap) {
+  Widget _buildBottomNav(
+    BuildContext context,
+    int currentIndex,
+    void Function(int) onTap,
+    ColorScheme scheme,
+  ) {
     return Container(
       decoration: BoxDecoration(
-        color: ViberantColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: Offset(0, -2),
-          ),
-        ],
+        color: scheme.surfaceContainerLowest,
+        border: Border(top: BorderSide(color: scheme.outlineVariant, width: 1)),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: SizedBox(
+          height: 60,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.dashboard_rounded,
-                label: 'Dashboard',
-                isActive: currentIndex == 0,
-                onTap: () => onTap(0),
+            children: List.generate(
+              _tabs.length,
+              (i) => Expanded(
+                child: _NavItem(
+                  tab: _tabs[i],
+                  isActive: currentIndex == i,
+                  onTap: () => onTap(i),
+                ),
               ),
-              _NavItem(
-                icon: Icons.point_of_sale_rounded,
-                label: 'POS',
-                isActive: currentIndex == 1,
-                onTap: () => onTap(1),
-              ),
-              _NavItem(
-                icon: Icons.inventory_2_rounded,
-                label: 'Inventory',
-                isActive: currentIndex == 2,
-                onTap: () => onTap(2),
-              ),
-              _NavItem(
-                icon: Icons.people_rounded,
-                label: 'Customers',
-                isActive: currentIndex == 3,
-                onTap: () => onTap(3),
-              ),
-              _NavItem(
-                icon: Icons.settings_rounded,
-                label: 'Settings',
-                isActive: currentIndex == 4,
-                onTap: () => onTap(4),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -180,50 +158,57 @@ class MainLayout extends ConsumerWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _TabItem {
   final IconData icon;
   final String label;
+  const _TabItem({required this.icon, required this.label});
+}
+
+class _NavItem extends StatelessWidget {
+  final _TabItem tab;
   final bool isActive;
   final VoidCallback onTap;
 
   const _NavItem({
-    required this.icon,
-    required this.label,
+    required this.tab,
     required this.isActive,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive
-              ? ViberantColors.primary.withOpacity(0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: isActive ? ViberantColors.primary : ViberantColors.grey,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? scheme.primary.withValues(alpha: 0.1)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(ViberantRadius.full),
             ),
-            SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: isActive ? ViberantColors.primary : ViberantColors.grey,
-              ),
+            child: Icon(
+              tab.icon,
+              size: 22,
+              color: isActive ? scheme.primary : scheme.onSurfaceVariant,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            tab.label,
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+              color: isActive ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
