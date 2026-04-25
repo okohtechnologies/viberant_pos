@@ -1,49 +1,41 @@
-// lib/presentation/pages/orders/order_history.dart
-// CHANGED: Replaced raw FirebaseFirestore StreamBuilder with
-// ref.watch(myOrderHistoryProvider) from employee_providers.dart.
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:viberant_pos/presentation/providers/sale_repository_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/sale_entity.dart';
-import '../../providers/employee_providers.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/loading_shimmer.dart';
-import '../../widgets/common/status_chip.dart';
 import '../../widgets/common/viberant_card.dart';
+import '../../widgets/common/widgets.dart';
 import '../orders/sales_details_page.dart';
 
 class OrderHistoryPage extends ConsumerWidget {
-  const OrderHistoryPage({super.key});
+  final String businessId;
+  const OrderHistoryPage({super.key, required this.businessId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final salesAsync = ref.watch(myOrderHistoryProvider);
-    final scheme = Theme.of(context).colorScheme;
+    // Uses Riverpod provider — no raw Firestore in widget
+    final ordersAsync = ref.watch(myOrderHistoryProvider);
 
     return Scaffold(
-      backgroundColor: scheme.surface,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          'My Sales History',
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-            color: scheme.onSurface,
-          ),
+          'Sales History',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
-        backgroundColor: scheme.surface,
-        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: salesAsync.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.all(16),
-          child: ShimmerList(count: 8),
-        ),
+      body: ordersAsync.when(
+        loading: () => const ShimmerList(count: 6, itemHeight: 90),
         error: (e, _) => EmptyState(
           icon: Icons.error_outline_rounded,
-          title: 'Failed to load history',
+          title: 'Could not load history',
           description: e.toString(),
         ),
         data: (sales) {
@@ -51,14 +43,91 @@ class OrderHistoryPage extends ConsumerWidget {
             return const EmptyState(
               icon: Icons.receipt_long_rounded,
               title: 'No sales yet',
-              description: 'Your completed sales will appear here.',
+              description: 'Your completed sales will appear here',
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: sales.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (ctx, i) => _SaleRow(sale: sales[i]),
+
+          // Summary strip at top
+          final totalRevenue = sales.fold(0.0, (s, e) => s + e.finalAmount);
+
+          return Column(
+            children: [
+              // Summary
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ViberantCard(
+                        color: ViberantColors.primary.withOpacity(0.06),
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'My Sales',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: ViberantColors.outline,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${sales.length}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: ViberantColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ViberantCard(
+                        color: ViberantColors.success.withOpacity(0.06),
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'My Revenue',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: ViberantColors.outline,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '₵${NumberFormat('#,###.00').format(totalRevenue)}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: ViberantColors.success,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // List
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: sales.length,
+                  itemBuilder: (_, i) => _OrderCard(
+                    sale: sales[i],
+                  ).animate().fadeIn(delay: (i * 40).ms).slideY(begin: 0.05),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -66,79 +135,115 @@ class OrderHistoryPage extends ConsumerWidget {
   }
 }
 
-class _SaleRow extends StatelessWidget {
+class _OrderCard extends StatelessWidget {
   final SaleEntity sale;
-  const _SaleRow({required this.sale});
+  const _OrderCard({required this.sale});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final date = DateFormat('d MMM, hh:mm a').format(sale.saleDate);
-    final amount = NumberFormat('#,###.00').format(sale.finalAmount);
+    final date = DateFormat('d MMM · h:mm a').format(sale.saleDate);
+    final txnShort = sale.transactionId.length > 12
+        ? '${sale.transactionId.substring(0, 12)}…'
+        : sale.transactionId;
 
-    return ViberantCard(
+    return GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => SaleDetailsPage(sale: sale)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(ViberantRadius.md),
-            ),
-            child: Icon(
-              Icons.receipt_rounded,
-              size: 18,
-              color: scheme.onPrimaryContainer,
-            ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Theme.of(
+              context,
+            ).colorScheme.outlineVariant.withOpacity(0.3),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          boxShadow: [
+            BoxShadow(
+              color: ViberantColors.primary.withOpacity(0.03),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  sale.customerName?.isNotEmpty == true
-                      ? sale.customerName!
-                      : 'Walk-in Customer',
+                  txnShort,
                   style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: scheme.onSurface,
+                    fontSize: 11,
+                    color: ViberantColors.outline,
                   ),
                 ),
-                const SizedBox(height: 2),
+                StatusChip.fromSaleStatus(sale.status),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.person_outline_rounded,
+                  size: 14,
+                  color: ViberantColors.outline,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    (sale.customerName?.isNotEmpty == true)
+                        ? sale.customerName!
+                        : 'Walk-in Customer',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
                 Text(
-                  '$date  ·  ${sale.totalItems} item${sale.totalItems == 1 ? '' : 's'}',
+                  date,
                   style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
+                    fontSize: 11,
+                    color: ViberantColors.outline,
                   ),
                 ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'GHS $amount',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: scheme.onSurface,
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 14,
+                  color: ViberantColors.outline,
                 ),
-              ),
-              const SizedBox(height: 4),
-              StatusChip.success(label: 'Completed'),
-            ],
-          ),
-        ],
+                const SizedBox(width: 4),
+                Text(
+                  '${sale.items.length} items',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: ViberantColors.outline,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '₵${NumberFormat('#,###.00').format(sale.finalAmount)}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: ViberantColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

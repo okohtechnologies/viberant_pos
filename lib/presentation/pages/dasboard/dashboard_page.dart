@@ -1,284 +1,317 @@
-// lib/presentation/pages/dasboard/dashboard_page.dart
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+import '../../../core/constants/breakpoints.dart';
+import '../../../core/navigation/app_navigator.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../providers/dashboard_provider.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/loading_shimmer.dart';
-import '../../widgets/common/stat_card.dart';
-import '../../widgets/common/status_chip.dart';
-import '../../widgets/common/viberant_card.dart';
 import '../../../domain/entities/dashboard_entity.dart';
+import '../../../domain/states/auth_state.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/dashboard_provider.dart';
+import '../../widgets/common/viberant_card.dart';
+import '../../widgets/common/stat_card.dart';
+import '../../widgets/common/widgets.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(dashboardStatsProvider);
-    final currency = NumberFormat.currency(symbol: 'GHS ', decimalDigits: 2);
+    final authState = ref.watch(authProvider);
+    final stats = ref.watch(dashboardStatsProvider);
+    final isAdmin = authState is AuthAuthenticated && authState.user.isAdmin;
+    final userName = authState is AuthAuthenticated
+        ? authState.user.displayName.split(' ').first
+        : 'there';
+    final isMobile = Breakpoints.isMobile(context);
 
-    return statsAsync.when(
-      loading: () => _LoadingSkeleton(),
-      error: (e, _) => EmptyState(
-        icon: Icons.error_outline_rounded,
-        title: 'Dashboard unavailable',
-        description: e.toString(),
-      ),
-      data: (stats) => _DashboardContent(stats: stats, currency: currency),
-    );
-  }
-}
-
-class _DashboardContent extends StatelessWidget {
-  final DashboardStats stats;
-  final NumberFormat currency;
-
-  const _DashboardContent({required this.stats, required this.currency});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final width = MediaQuery.of(context).size.width;
-    final isWide = width >= 600;
-
-    return RefreshIndicator(
-      onRefresh: () async {},
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // KPI grid
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: isWide ? 4 : 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: isWide ? 1.2 : 1.1,
-            children: [
-              StatCard(
-                label: "Today's Revenue",
-                value: currency.format(stats.todayRevenue),
-                icon: Icons.payments_rounded,
-                iconColor: ViberantColors.primary,
-              ),
-              StatCard(
-                label: "Today's Sales",
-                value: '${stats.todaySales}',
-                icon: Icons.point_of_sale_rounded,
-                iconColor: ViberantColors.secondary,
-              ),
-              StatCard(
-                label: 'Products',
-                value: '${stats.totalProducts}',
-                icon: Icons.inventory_2_rounded,
-                iconColor: ViberantColors.tertiary,
-              ),
-              StatCard(
-                label: 'Customers',
-                value: '${stats.totalCustomers}',
-                icon: Icons.people_rounded,
-                iconColor: ViberantColors.info,
-              ),
-            ],
+          // ── Header ──────────────────────────────────────────────────────────
+          _DashboardHeader(userName: userName, isAdmin: isAdmin),
+          const SizedBox(height: 24),
+
+          // ── KPI Stats Grid ───────────────────────────────────────────────────
+          stats.when(
+            loading: () =>
+                ShimmerGrid(count: 4, crossAxisCount: isMobile ? 2 : 4),
+            error: (e, _) => _ErrorBlock(message: e.toString()),
+            data: (s) => _StatsGrid(stats: s, isMobile: isMobile),
           ),
+          const SizedBox(height: 24),
 
-          // Low stock alert
-          if (stats.lowStockItems > 0) ...[
-            const SizedBox(height: 16),
-            ViberantCard(
-              padding: const EdgeInsets.all(16),
-              color: ViberantColors.warning.withValues(alpha: 0.08),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: ViberantColors.warning,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '${stats.lowStockItems} product${stats.lowStockItems == 1 ? '' : 's'} running low on stock',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'View',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: ViberantColors.warning,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 20),
-
-          // Weekly chart
-          _SectionHeader(title: 'Weekly Revenue'),
-          const SizedBox(height: 12),
-          ViberantCard(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            child: SizedBox(
-              height: 160,
-              child: _WeeklyChart(data: stats.weeklySales),
-            ),
+          // ── Weekly Revenue Chart ─────────────────────────────────────────────
+          stats.when(
+            loading: () => const ShimmerCard(height: 220),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (s) => _WeeklyChart(stats: s).animate().fadeIn(delay: 200.ms),
           ),
+          const SizedBox(height: 24),
 
-          const SizedBox(height: 20),
-
-          // Recent sales
-          _SectionHeader(title: 'Recent Sales'),
-          const SizedBox(height: 12),
-          if (stats.recentSales.isEmpty)
-            const EmptyState(
-              icon: Icons.receipt_long_rounded,
-              title: 'No sales today',
-              description: 'Completed sales will appear here.',
-            )
+          // ── Admin Tools OR Recent Sales ──────────────────────────────────────
+          if (isAdmin)
+            _AdminToolsCard(ref: ref).animate().fadeIn(delay: 300.ms)
           else
-            ViberantCard(
-              child: Column(
-                children: stats.recentSales
-                    .map((s) => _RecentSaleRow(sale: s, currency: currency))
-                    .toList(),
-              ),
+            stats.when(
+              loading: () => const ShimmerList(count: 4, itemHeight: 68),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (s) =>
+                  _RecentSalesList(stats: s).animate().fadeIn(delay: 300.ms),
             ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
         ],
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) => Text(
-    title,
-    style: GoogleFonts.plusJakartaSans(
-      fontSize: 16,
-      fontWeight: FontWeight.w600,
-      color: Theme.of(context).colorScheme.onSurface,
-    ),
-  );
-}
-
-class _WeeklyChart extends StatelessWidget {
-  final List<SaleChartData> data;
-  const _WeeklyChart({required this.data});
+// ─── Header ───────────────────────────────────────────────────────────────────
+class _DashboardHeader extends StatelessWidget {
+  final String userName;
+  final bool isAdmin;
+  const _DashboardHeader({required this.userName, required this.isAdmin});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    if (data.isEmpty) return const SizedBox.shrink();
-    final maxY = data.map((d) => d.revenue).reduce((a, b) => a > b ? a : b);
-
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        maxY: maxY * 1.25,
-        barTouchData: BarTouchData(enabled: false),
-        titlesData: FlTitlesData(
-          show: true,
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (v, _) => Text(
-                data[v.toInt()].period,
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  color: scheme.onSurfaceVariant,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Welcome back, $userName',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
+                if (isAdmin) ...[
+                  const SizedBox(width: 8),
+                  StatusChip.role(true),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Dashboard',
+              style: GoogleFonts.poppins(
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
+          ],
+        ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: ViberantColors.primary.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
           ),
-          leftTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
+          child: const Icon(
+            Icons.analytics_rounded,
+            color: ViberantColors.primary,
+            size: 24,
           ),
         ),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: scheme.outlineVariant.withValues(alpha: 0.5),
-            strokeWidth: 1,
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        barGroups: data.asMap().entries.map((e) {
-          return BarChartGroupData(
-            x: e.key,
-            barRods: [
-              BarChartRodData(
-                toY: e.value.revenue,
-                width: 14,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(4),
+      ],
+    );
+  }
+}
+
+// ─── Stats Grid ───────────────────────────────────────────────────────────────
+class _StatsGrid extends StatelessWidget {
+  final DashboardStats stats;
+  final bool isMobile;
+  const _StatsGrid({required this.stats, required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = NumberFormat('#,###.00');
+    final cols = isMobile ? 2 : 4;
+
+    final cards = [
+      StatCard(
+        title: "Today's Revenue",
+        value: 'GHS ${currency.format(stats.todayRevenue)}',
+        icon: Icons.trending_up_rounded,
+        color: ViberantColors.success,
+      ).animate().fadeIn(delay: 100.ms).slideX(begin: -0.05),
+      StatCard(
+        title: "Today's Sales",
+        value: stats.todaySales.toString(),
+        icon: Icons.shopping_cart_rounded,
+        color: ViberantColors.primary,
+      ).animate().fadeIn(delay: 150.ms).slideX(begin: 0.05),
+      StatCard(
+        title: 'Total Products',
+        value: stats.totalProducts.toString(),
+        icon: Icons.inventory_2_rounded,
+        color: ViberantColors.warning,
+      ).animate().fadeIn(delay: 200.ms).slideX(begin: -0.05),
+      StatCard(
+        title: 'Low Stock',
+        value: stats.lowStockItems.toString(),
+        icon: Icons.warning_amber_rounded,
+        color: ViberantColors.error,
+        badge: stats.lowStockItems > 0 ? 'ALERT' : null,
+      ).animate().fadeIn(delay: 250.ms).slideX(begin: 0.05),
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.3,
+      ),
+      itemCount: cards.length,
+      itemBuilder: (_, i) => cards[i],
+    );
+  }
+}
+
+// ─── Weekly Chart ─────────────────────────────────────────────────────────────
+class _WeeklyChart extends StatelessWidget {
+  final DashboardStats stats;
+  const _WeeklyChart({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = NumberFormat('#,###.00');
+    return ViberantCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Weekly Revenue',
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      'GHS ${currency.format(stats.weeklyRevenue)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: ViberantColors.primary,
+                      ),
+                    ),
+                  ],
                 ),
-                color: scheme.primary,
-                backDrawRodData: BackgroundBarChartRodData(
-                  show: true,
-                  toY: maxY * 1.25,
-                  color: scheme.surfaceContainerHigh,
+              ),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ViberantColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.bar_chart_rounded,
+                  color: ViberantColors.primary,
+                  size: 20,
                 ),
               ),
             ],
-          );
-        }).toList(),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 160,
+            child: stats.weeklySales.isEmpty
+                ? EmptyState(
+                    icon: Icons.bar_chart_rounded,
+                    title: 'No sales this week',
+                    description: 'Start selling to see revenue data',
+                  )
+                : SfCartesianChart(
+                    margin: EdgeInsets.zero,
+                    plotAreaBorderWidth: 0,
+                    primaryXAxis: CategoryAxis(
+                      labelStyle: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: ViberantColors.outline,
+                      ),
+                      majorGridLines: const MajorGridLines(width: 0),
+                      axisLine: const AxisLine(width: 0),
+                    ),
+                    primaryYAxis: NumericAxis(
+                      labelStyle: GoogleFonts.inter(
+                        fontSize: 9,
+                        color: ViberantColors.outline,
+                      ),
+                      labelFormat: 'GHS {value}',
+                      axisLine: const AxisLine(width: 0),
+                      majorTickLines: const MajorTickLines(size: 0),
+                    ),
+                    series: <CartesianSeries>[
+                      ColumnSeries<SaleChartData, String>(
+                        dataSource: stats.weeklySales,
+                        xValueMapper: (d, _) => d.period,
+                        yValueMapper: (d, _) => d.revenue,
+                        color: ViberantColors.primary,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(6),
+                        ),
+                        dataLabelSettings: DataLabelSettings(
+                          isVisible: true,
+                          textStyle: GoogleFonts.inter(
+                            fontSize: 9,
+                            color: ViberantColors.outline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _RecentSaleRow extends StatelessWidget {
-  final RecentSale sale;
-  final NumberFormat currency;
-
-  const _RecentSaleRow({required this.sale, required this.currency});
+// ─── Admin Tools Card ─────────────────────────────────────────────────────────
+class _AdminToolsCard extends StatelessWidget {
+  final WidgetRef ref;
+  const _AdminToolsCard({required this.ref});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // divider handled by Column's children divider logic
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
+    return ViberantCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(ViberantRadius.md),
+                  color: ViberantColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  Icons.receipt_rounded,
-                  size: 16,
-                  color: scheme.onPrimaryContainer,
+                child: const Icon(
+                  Icons.admin_panel_settings_rounded,
+                  color: ViberantColors.primary,
+                  size: 20,
                 ),
               ),
               const SizedBox(width: 12),
@@ -287,70 +320,227 @@ class _RecentSaleRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      sale.customerName,
+                      'Admin Tools',
                       style: GoogleFonts.inter(
-                        fontSize: 13,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: scheme.onSurface,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     Text(
-                      DateFormat('hh:mm a').format(sale.date) +
-                          '  ·  ${sale.itemsCount} item${sale.itemsCount == 1 ? '' : 's'}',
+                      'Manage users, reports, and business settings',
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: scheme.onSurfaceVariant,
+                        color: ViberantColors.outline,
                       ),
                     ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    currency.format(sale.amount),
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  StatusChip.success(label: 'Done'),
-                ],
+              StatusChip.role(true),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _AdminAction(
+                  title: 'Manage Users',
+                  icon: Icons.people_rounded,
+                  color: ViberantColors.primary,
+                  onTap: () => AppNavigator.toUsersManagement(context, ref),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _AdminAction(
+                  title: 'Sales Reports',
+                  icon: Icons.analytics_rounded,
+                  color: ViberantColors.warning,
+                  onTap: () => AppNavigator.toSalesReport(context, ref),
+                ),
               ),
             ],
           ),
-        ),
-        const Divider(height: 1, indent: 64),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _LoadingSkeleton extends StatelessWidget {
+class _AdminAction extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _AdminAction({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 1.1,
+  Widget build(BuildContext context) {
+    return ViberantCard(
+      color: color.withOpacity(0.06),
+      padding: const EdgeInsets.all(14),
+      onTap: onTap,
+      child: Row(
         children: [
-          LoadingShimmer.card(),
-          LoadingShimmer.card(),
-          LoadingShimmer.card(),
-          LoadingShimmer.card(),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+          Icon(Icons.arrow_forward_ios_rounded, size: 12, color: color),
         ],
       ),
-      const SizedBox(height: 20),
-      const LoadingShimmer(height: 200, borderRadius: ViberantRadius.card),
-      const SizedBox(height: 20),
-      const LoadingShimmer(height: 240, borderRadius: ViberantRadius.card),
-    ],
+    );
+  }
+}
+
+// ─── Recent Sales List ────────────────────────────────────────────────────────
+class _RecentSalesList extends StatelessWidget {
+  final DashboardStats stats;
+  const _RecentSalesList({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return ViberantCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(title: 'Recent Sales'),
+          const SizedBox(height: 12),
+          if (stats.recentSales.isEmpty)
+            EmptyState(
+              icon: Icons.receipt_rounded,
+              title: 'No sales yet',
+              description: 'Complete a sale to see it here',
+            )
+          else
+            ...stats.recentSales.asMap().entries.map(
+              (e) => _RecentSaleRow(
+                sale: e.value,
+              ).animate().fadeIn(delay: (e.key * 80).ms).slideY(begin: 0.05),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentSaleRow extends StatelessWidget {
+  final RecentSale sale;
+  const _RecentSaleRow({required this.sale});
+
+  @override
+  Widget build(BuildContext context) {
+    final timeAgo = _formatTime(sale.date);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: ViberantColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.receipt_rounded,
+              color: ViberantColors.primary,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sale.customerName,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  '${sale.itemsCount} items · $timeAgo',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: ViberantColors.outline,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            'GHS ${NumberFormat('#,###.00').format(sale.amount)}',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: ViberantColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime date) {
+    final diff = DateTime.now().difference(date);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+}
+
+class _ErrorBlock extends StatelessWidget {
+  final String message;
+  const _ErrorBlock({required this.message});
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.error_outline, color: ViberantColors.error, size: 40),
+        const SizedBox(height: 8),
+        Text(
+          'Failed to load dashboard',
+          style: GoogleFonts.inter(color: ViberantColors.error),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          message,
+          style: GoogleFonts.inter(fontSize: 12, color: ViberantColors.outline),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ),
   );
 }

@@ -1,68 +1,32 @@
-// lib/presentation/widgets/role_guard.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:viberant_pos/domain/states/auth_state.dart';
+import '../../domain/states/auth_state.dart';
 import '../providers/auth_provider.dart';
 
+/// Renders [child] only when the authenticated user satisfies [requireAdmin].
+/// Falls back to [fallback] (or an empty box) otherwise.
 class RoleGuard extends ConsumerWidget {
   final Widget child;
-  final bool Function(bool isAdmin) condition;
   final Widget? fallback;
+  final bool requireAdmin;
 
   const RoleGuard({
     super.key,
     required this.child,
-    required this.condition,
     this.fallback,
+    this.requireAdmin = true,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
+    final auth = ref.watch(authProvider);
 
-    if (authState is! AuthAuthenticated) {
+    if (auth is! AuthAuthenticated) {
       return fallback ?? const SizedBox.shrink();
     }
-
-    final isAdmin = authState.user.isAdmin;
-
-    if (condition(isAdmin)) {
-      return child;
+    if (requireAdmin && !auth.user.isAdmin) {
+      return fallback ?? const SizedBox.shrink();
     }
-
-    return fallback ?? const SizedBox.shrink();
-  }
-}
-
-// Pre-built role guard widgets
-class AdminOnly extends StatelessWidget {
-  final Widget child;
-  final Widget? fallback;
-
-  const AdminOnly({super.key, required this.child, this.fallback});
-
-  @override
-  Widget build(BuildContext context) {
-    return RoleGuard(
-      condition: (isAdmin) => isAdmin,
-      child: child,
-      fallback: fallback,
-    );
-  }
-}
-
-class UserOnly extends StatelessWidget {
-  final Widget child;
-  final Widget? fallback;
-
-  const UserOnly({super.key, required this.child, this.fallback});
-
-  @override
-  Widget build(BuildContext context) {
-    return RoleGuard(
-      condition: (isAdmin) => !isAdmin,
-      child: child,
-      fallback: fallback,
-    );
+    return child;
   }
 }

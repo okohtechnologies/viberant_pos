@@ -1,125 +1,181 @@
-// lib/presentation/pages/splash/splash_page.dart
-// Updated to match Stitch "Viberant Logic" splash spec:
-// deep violet background, floating blurred circles, Poppins wordmark,
-// animated logo scale-in. Navigation handled by main.dart auth stream —
-// removed the manual pushReplacement timer.
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../core/theme/app_theme.dart';
 
-class SplashPage extends StatelessWidget {
+class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
+
+  @override
+  State<SplashPage> createState() => _SplashPageState();
+}
+
+class _SplashPageState extends State<SplashPage> {
+  @override
+  void initState() {
+    super.initState();
+    // Navigation is handled by main.dart auth state — SplashPage auto-replaces
+    // when AuthNotifier resolves (Initial → Authenticated/Unauthenticated).
+    // No manual navigation timer needed.
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: ViberantColors.darkBackground,
       body: Stack(
         children: [
-          // ── Decorative blurred circles (Stitch "Abstract Depth") ──
-          const _BackgroundCircles(),
+          // ── Gradient background ────────────────────────────────────────────
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF4D41DF), Color(0xFF675DF9)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
 
-          // ── Centred content ──
+          // ── Decorative circles ─────────────────────────────────────────────
+          Positioned(
+            top: -60,
+            right: -60,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.08),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -80,
+            left: -80,
+            child: Container(
+              width: 280,
+              height: 280,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.06),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 120,
+            left: -40,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.04),
+              ),
+            ),
+          ),
+
+          // ── Center content ─────────────────────────────────────────────────
           Center(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo card
+                // Logo container
                 Container(
                       width: 100,
                       height: 100,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(ViberantRadius.lg),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
-                        ),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: ViberantColors.darkPrimary.withValues(
-                              alpha: 0.3,
-                            ),
-                            blurRadius: 40,
-                            spreadRadius: 4,
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 30,
+                            offset: const Offset(0, 12),
                           ),
                         ],
                       ),
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Image.asset(
-                            'assets/images/viberant_logo4.png',
-                            fit: BoxFit.contain,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Image.asset(
+                          'assets/images/viberant_logo4.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.point_of_sale_rounded,
+                            color: Color(0xFF4D41DF),
+                            size: 48,
                           ),
                         ),
                       ),
                     )
                     .animate()
                     .scale(
-                      duration: 800.ms,
+                      duration: 700.ms,
                       curve: Curves.elasticOut,
                       begin: const Offset(0.5, 0.5),
                     )
                     .fadeIn(duration: 400.ms),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 28),
 
-                // Wordmark: "Viberant" bold + "POS" light
-                Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Viberant',
-                          style: GoogleFonts.poppins(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            height: 1.2,
+                // Wordmark
+                RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Viberant',
+                            style: GoogleFonts.poppins(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            ),
                           ),
-                        ),
-                        Text(
-                          ' POS',
-                          style: GoogleFonts.poppins(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w300,
-                            color: Colors.white.withValues(alpha: 0.8),
-                            height: 1.2,
+                          TextSpan(
+                            text: ' POS',
+                            style: GoogleFonts.poppins(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w300,
+                              color: Colors.white.withOpacity(0.75),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     )
                     .animate()
-                    .fadeIn(delay: 300.ms, duration: 600.ms)
-                    .slideY(begin: 0.3, end: 0, duration: 500.ms),
+                    .fadeIn(delay: 300.ms, duration: 500.ms)
+                    .slideY(begin: 0.2, end: 0),
 
                 const SizedBox(height: 8),
 
                 Text(
-                  'Professional POS System',
+                  'Smart Sales. Instant Insights.',
                   style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    color: Colors.white.withValues(alpha: 0.5),
-                    letterSpacing: 0.02 * 13,
+                    fontSize: 14,
+                    color: Colors.white.withOpacity(0.6),
+                    letterSpacing: 0.3,
                   ),
-                ).animate().fadeIn(delay: 500.ms, duration: 600.ms),
+                ).animate().fadeIn(delay: 450.ms, duration: 500.ms),
 
-                const SizedBox(height: 64),
+                const SizedBox(height: 40),
 
-                // Loading indicator
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      ViberantColors.darkPrimary.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ).animate().fadeIn(delay: 800.ms),
+                // Animated loading dots
+                _LoadingDots().animate().fadeIn(delay: 600.ms),
               ],
             ),
+          ),
+
+          // ── Version number ─────────────────────────────────────────────────
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Text(
+              'v1.0',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: Colors.white.withOpacity(0.3),
+              ),
+            ).animate().fadeIn(delay: 700.ms),
           ),
         ],
       ),
@@ -127,57 +183,55 @@ class SplashPage extends StatelessWidget {
   }
 }
 
-class _BackgroundCircles extends StatelessWidget {
-  const _BackgroundCircles();
+class _LoadingDots extends StatefulWidget {
+  @override
+  State<_LoadingDots> createState() => _LoadingDotsState();
+}
+
+class _LoadingDotsState extends State<_LoadingDots>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    return Stack(
-      children: [
-        _blur(
-          size.width * 0.9,
-          -60,
-          -80,
-          ViberantColors.darkPrimaryContainer,
-          0.15,
-        ),
-        _blur(
-          size.width * 0.6,
-          size.width * 0.5,
-          size.height * 0.6,
-          ViberantColors.darkSecondaryContainer,
-          0.1,
-        ),
-        _blur(
-          size.width * 0.5,
-          -40,
-          size.height * 0.5,
-          ViberantColors.darkTertiaryContainer,
-          0.08,
-        ),
-      ],
-    );
-  }
-
-  Widget _blur(
-    double size,
-    double left,
-    double top,
-    Color color,
-    double opacity,
-  ) {
-    return Positioned(
-      left: left,
-      top: top,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withValues(alpha: opacity),
-        ),
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (i) {
+        return AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) {
+            final phase = (_ctrl.value * 3 - i).clamp(0.0, 1.0);
+            final opacity = (phase < 0.5 ? phase * 2 : (1 - phase) * 2).clamp(
+              0.3,
+              1.0,
+            );
+            return Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(opacity),
+              ),
+            );
+          },
+        );
+      }),
     );
   }
 }

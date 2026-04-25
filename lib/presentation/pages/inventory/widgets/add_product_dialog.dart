@@ -2,14 +2,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../../../../core/theme/app_theme.dart';
 import '../../../../domain/entities/product_entity.dart';
-import '../../../../domain/states/auth_state.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../providers/inventory_provider.dart';
+import '../../../providers/product_repository_provider.dart';
 
 class AddProductDialog extends ConsumerStatefulWidget {
-  const AddProductDialog({super.key});
+  final String businessId;
+  final VoidCallback onProductAdded;
+  final bool isMobile;
+
+  const AddProductDialog({
+    super.key,
+    required this.businessId,
+    required this.onProductAdded,
+    required this.isMobile,
+  });
 
   @override
   ConsumerState<AddProductDialog> createState() => _AddProductDialogState();
@@ -17,356 +25,308 @@ class AddProductDialog extends ConsumerStatefulWidget {
 
 class _AddProductDialogState extends ConsumerState<AddProductDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _priceCtrl = TextEditingController();
-  final _costCtrl = TextEditingController();
-  final _stockCtrl = TextEditingController();
-  final _minStockCtrl = TextEditingController();
-  final _categoryCtrl = TextEditingController();
-  final _skuCtrl = TextEditingController();
-  final _supplierCtrl = TextEditingController();
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _costPriceController = TextEditingController();
+  final _stockController = TextEditingController(text: '0');
+  final _minStockController = TextEditingController(text: '5');
+  final _barcodeController = TextEditingController();
+  final _skuController = TextEditingController();
+  final _supplierController = TextEditingController();
+
+  String _selectedCategory = 'General';
   bool _isLoading = false;
-  String? _error;
+
+  final List<String> _categories = [
+    'General',
+    'Electronics',
+    'Clothing',
+    'Food & Beverages',
+    'Home & Garden',
+    'Health & Beauty',
+    'Sports',
+    'Books',
+    'Toys',
+    'Automotive',
+  ];
 
   @override
   void dispose() {
-    for (final c in [
-      _nameCtrl,
-      _descCtrl,
-      _priceCtrl,
-      _costCtrl,
-      _stockCtrl,
-      _minStockCtrl,
-      _categoryCtrl,
-      _skuCtrl,
-      _supplierCtrl,
-    ]) {
-      c.dispose();
-    }
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _priceController.dispose();
+    _costPriceController.dispose();
+    _stockController.dispose();
+    _minStockController.dispose();
+    _barcodeController.dispose();
+    _skuController.dispose();
+    _supplierController.dispose();
     super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    final auth = ref.read(authProvider);
-    if (auth is! AuthAuthenticated) return;
-
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final repo = ref.read(productRepositoryProvider);
-      final product = ProductEntity(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: _nameCtrl.text.trim(),
-        description: _descCtrl.text.trim(),
-        price: double.parse(_priceCtrl.text.trim()),
-        costPrice: _costCtrl.text.trim().isNotEmpty
-            ? double.parse(_costCtrl.text.trim())
-            : 0,
-        stock: int.parse(_stockCtrl.text.trim()),
-        minStock: _minStockCtrl.text.trim().isNotEmpty
-            ? int.parse(_minStockCtrl.text.trim())
-            : 5,
-        category: _categoryCtrl.text.trim().isNotEmpty
-            ? _categoryCtrl.text.trim()
-            : 'General',
-        sku: _skuCtrl.text.trim().isNotEmpty ? _skuCtrl.text.trim() : null,
-        supplier: _supplierCtrl.text.trim().isNotEmpty
-            ? _supplierCtrl.text.trim()
-            : null,
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      await repo.addProduct(auth.user.businessId, product);
-      // Invalidate categories so new category appears
-      ref.invalidate(categoriesProvider);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.toString();
-      });
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ViberantRadius.lg),
-      ),
+      insetPadding: EdgeInsets.all(widget.isMobile ? 16 : 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
+        constraints: BoxConstraints(
+          maxWidth: widget.isMobile ? 400 : 500,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: AlertDialog(
+          title: Text(
+            'Add New Product',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          content: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Add Product',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () => Navigator.pop(context),
-                        style: IconButton.styleFrom(
-                          backgroundColor: scheme.surfaceContainerHigh,
-                          padding: const EdgeInsets.all(6),
-                          minimumSize: const Size(32, 32),
-                        ),
-                      ),
-                    ],
+                  _buildTextField(
+                    controller: _nameController,
+                    label: 'Product Name *',
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? 'Required' : null,
+                    isMobile: widget.isMobile,
                   ),
-
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: scheme.errorContainer,
-                        borderRadius: BorderRadius.circular(ViberantRadius.md),
-                      ),
-                      child: Text(
-                        _error!,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: scheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 16),
-
-                  _label('Product Name *'),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. Coca-Cola 500ml',
-                    ),
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Required' : null,
-                  ),
-
-                  const SizedBox(height: 12),
-                  _label('Description'),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _descCtrl,
+                  _buildTextField(
+                    controller: _descriptionController,
+                    label: 'Description',
                     maxLines: 2,
-                    decoration: const InputDecoration(hintText: 'Optional'),
+                    isMobile: widget.isMobile,
                   ),
-
-                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _label('Selling Price (GHS) *'),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _priceCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                hintText: '0.00',
-                              ),
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty)
-                                  return 'Required';
-                                if (double.tryParse(v) == null)
-                                  return 'Invalid';
-                                return null;
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _label('Cost Price (GHS)'),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _costCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                hintText: '0.00',
-                              ),
-                              validator: (v) {
-                                if (v != null &&
-                                    v.isNotEmpty &&
-                                    double.tryParse(v) == null)
-                                  return 'Invalid';
-                                return null;
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _label('Stock Quantity *'),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _stockCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(hintText: '0'),
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty)
-                                  return 'Required';
-                                if (int.tryParse(v) == null) return 'Invalid';
-                                return null;
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _label('Low Stock Alert'),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _minStockCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(hintText: '5'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _label('Category'),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _categoryCtrl,
-                              decoration: const InputDecoration(
-                                hintText: 'e.g. Beverages',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _label('SKU'),
-                            const SizedBox(height: 6),
-                            TextFormField(
-                              controller: _skuCtrl,
-                              decoration: const InputDecoration(
-                                hintText: 'Optional',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-                  _label('Supplier'),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _supplierCtrl,
-                    decoration: const InputDecoration(hintText: 'Optional'),
-                  ),
-
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 48),
+                        child: _buildTextField(
+                          controller: _priceController,
+                          label: 'Selling Price *',
+                          keyboardType: TextInputType.numberWithOptions(
+                            decimal: true,
                           ),
-                          child: const Text('Cancel'),
+                          validator: (value) {
+                            if (value?.isEmpty ?? true) return 'Required';
+                            final price = double.tryParse(value!);
+                            if (price == null || price <= 0) {
+                              return 'Invalid price';
+                            }
+                            return null;
+                          },
+                          isMobile: widget.isMobile,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      SizedBox(width: widget.isMobile ? 8 : 12),
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _submit,
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(0, 48),
+                        child: _buildTextField(
+                          controller: _costPriceController,
+                          label: 'Cost Price',
+                          keyboardType: TextInputType.numberWithOptions(
+                            decimal: true,
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : const Text('Add Product'),
+                          isMobile: widget.isMobile,
                         ),
                       ),
                     ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          controller: _stockController,
+                          label: 'Initial Stock',
+                          keyboardType: TextInputType.number,
+                          isMobile: widget.isMobile,
+                        ),
+                      ),
+                      SizedBox(width: widget.isMobile ? 8 : 12),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: _minStockController,
+                          label: 'Min Stock',
+                          keyboardType: TextInputType.number,
+                          isMobile: widget.isMobile,
+                        ),
+                      ),
+                    ],
+                  ),
+                  _buildDropdown(
+                    value: _selectedCategory,
+                    items: _categories,
+                    label: 'Category',
+                    onChanged: (value) =>
+                        setState(() => _selectedCategory = value!),
+                    isMobile: widget.isMobile,
+                  ),
+                  _buildTextField(
+                    controller: _skuController,
+                    label: 'SKU (Optional)',
+                    isMobile: widget.isMobile,
+                  ),
+                  _buildTextField(
+                    controller: _barcodeController,
+                    label: 'Barcode (Optional)',
+                    isMobile: widget.isMobile,
+                  ),
+                  _buildTextField(
+                    controller: _supplierController,
+                    label: 'Supplier (Optional)',
+                    isMobile: widget.isMobile,
                   ),
                 ],
               ),
             ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isLoading ? null : () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _addProduct,
+              child: _isLoading
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text('Add Product'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    TextInputType? keyboardType,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+    required bool isMobile,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isMobile ? 8 : 12),
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        validator: validator,
+        style: GoogleFonts.inter(fontSize: isMobile ? 14 : 16),
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 12 : 16,
+            vertical: isMobile ? 12 : 16,
           ),
         ),
       ),
     );
   }
 
-  Widget _label(String text) => Text(
-    text,
-    style: GoogleFonts.inter(
-      fontSize: 12,
-      fontWeight: FontWeight.w500,
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-    ),
-  );
+  Widget _buildDropdown({
+    required String value,
+    required List<String> items,
+    required String label,
+    required ValueChanged<String?> onChanged,
+    required bool isMobile,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isMobile ? 8 : 12),
+      child: DropdownButtonFormField<String>(
+        initialValue: value,
+        items: items.map((category) {
+          return DropdownMenuItem(
+            value: category,
+            child: Text(
+              category,
+              style: GoogleFonts.inter(fontSize: isMobile ? 14 : 16),
+            ),
+          );
+        }).toList(),
+        onChanged: onChanged,
+        style: GoogleFonts.inter(fontSize: isMobile ? 14 : 16),
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 12 : 16,
+            vertical: isMobile ? 12 : 16,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addProduct() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final productRepository = ref.read(productRepositoryProvider);
+
+      final product = ProductEntity(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim(),
+        price: double.parse(_priceController.text),
+        costPrice: double.tryParse(_costPriceController.text) ?? 0.0,
+        stock: int.tryParse(_stockController.text) ?? 0,
+        minStock: int.tryParse(_minStockController.text) ?? 5,
+        barcode: _barcodeController.text.trim().isEmpty
+            ? null
+            : _barcodeController.text.trim(),
+        imageUrl: null,
+        category: _selectedCategory,
+        supplier: _supplierController.text.trim().isEmpty
+            ? null
+            : _supplierController.text.trim(),
+        sku: _skuController.text.trim().isEmpty
+            ? null
+            : _skuController.text.trim(),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        isActive: true,
+      );
+
+      await productRepository.addProduct(widget.businessId, product);
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onProductAdded();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Product added successfully!'),
+            backgroundColor: ViberantColors.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add product: $e'),
+            backgroundColor: ViberantColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 }

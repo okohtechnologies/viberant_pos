@@ -1,13 +1,16 @@
-// lib/presentation/pages/user_layout.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:viberant_pos/presentation/providers/sale_repository_provider.dart';
+import '../../core/navigation/app_navigator.dart';
 import '../../core/theme/app_theme.dart';
-import '../providers/auth_provider.dart';
-import '../pages/pos/pos_page.dart';
-import '../pages/orders/order_history.dart';
-import '../pages/sales/today_sales_page.dart';
 import '../../domain/states/auth_state.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/common/viberant_card.dart';
+import '../widgets/common/widgets.dart';
+import 'pos/pos_page.dart';
 
 class UserLayout extends ConsumerStatefulWidget {
   const UserLayout({super.key});
@@ -17,362 +20,179 @@ class UserLayout extends ConsumerStatefulWidget {
 }
 
 class _UserLayoutState extends ConsumerState<UserLayout> {
-  int _index = 0;
+  int _currentIndex = 0;
 
-  static const _tabs = [
-    _TabItem(icon: Icons.home_rounded, label: 'Home'),
-    _TabItem(icon: Icons.point_of_sale_rounded, label: 'POS'),
-    _TabItem(icon: Icons.receipt_long_rounded, label: 'My Sales'),
-  ];
+  void navigateToPage(int index) {
+    if (index == 2) {
+      _showLogoutConfirmation();
+      return;
+    }
+    setState(() => _currentIndex = index);
+  }
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
-    final scheme = Theme.of(context).colorScheme;
-
     if (authState is! AuthAuthenticated) {
-      return Scaffold(
-        body: Center(
-          child: ElevatedButton(
-            onPressed: () => ref.read(authProvider.notifier).signOut(),
-            child: const Text('Return to Login'),
-          ),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
-    const titles = ['Home', 'POS', 'My Sales'];
 
     return Scaffold(
-      backgroundColor: scheme.surface,
-      appBar: AppBar(
-        title: Text(
-          titles[_index],
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
-        backgroundColor: scheme.surfaceContainerLowest,
-        elevation: 0,
-        actions: [
-          // Sign out icon in app bar for quick access
-          if (_index == 0)
-            IconButton(
-              icon: Icon(
-                Icons.logout_rounded,
-                size: 20,
-                color: scheme.onSurfaceVariant,
-              ),
-              tooltip: 'Sign out',
-              onPressed: () => _confirmSignOut(context),
-            ),
-        ],
-      ),
-      body: _buildBody(authState),
-      bottomNavigationBar: _buildBottomNav(scheme),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: _currentIndex == 0
+          ? _buildAppBar(authState.user.businessName)
+          : null,
+      body: _currentIndex == 0
+          ? UserHomePage(onNavigate: navigateToPage)
+          : const PosPage(),
+      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
-  Widget _buildBody(AuthAuthenticated authState) {
-    switch (_index) {
-      case 0:
-        return _EmployeeHome(user: authState.user);
-      case 1:
-        return const PosPage();
-      case 2:
-        return const OrderHistoryPage();
-      default:
-        return _EmployeeHome(user: authState.user);
-    }
-  }
+  AppBar _buildAppBar(String businessName) => AppBar(
+    backgroundColor: ViberantColors.primary,
+    elevation: 0,
+    automaticallyImplyLeading: false,
+    title: Text(
+      businessName.isEmpty ? 'Viberant POS' : businessName,
+      style: GoogleFonts.poppins(
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+        fontStyle: FontStyle.italic,
+        color: Colors.white,
+      ),
+    ),
+    actions: const [SizedBox(width: 8)],
+  );
 
-  Widget _buildBottomNav(ColorScheme scheme) {
+  Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, -2),
+          ),
+        ],
       ),
       child: SafeArea(
-        child: SizedBox(
-          height: 60,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
-            children: List.generate(
-              _tabs.length,
-              (i) => Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _index = i),
-                  behavior: HitTestBehavior.opaque,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _index == i
-                              ? scheme.primary.withValues(alpha: 0.1)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(
-                            ViberantRadius.full,
-                          ),
-                        ),
-                        child: Icon(
-                          _tabs[i].icon,
-                          size: 22,
-                          color: _index == i
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _tabs[i].label,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: _index == i
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: _index == i
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _NavBtn(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                isActive: _currentIndex == 0,
+                onTap: () => navigateToPage(0),
               ),
-            ),
+              _NavBtn(
+                icon: Icons.point_of_sale_rounded,
+                label: 'POS',
+                isActive: _currentIndex == 1,
+                onTap: () => navigateToPage(1),
+              ),
+              _NavBtn(
+                icon: Icons.logout_rounded,
+                label: 'Logout',
+                isActive: false,
+                isLogout: true,
+                onTap: () => navigateToPage(2),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  void _confirmSignOut(BuildContext context) {
-    showDialog(
+  Future<void> _showLogoutConfirmation() async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(
-          'Sign Out',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.logout_rounded,
+              color: ViberantColors.error,
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Confirm Logout',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
         content: Text(
           'Are you sure you want to sign out?',
-          style: GoogleFonts.inter(fontSize: 14),
+          style: GoogleFonts.inter(color: ViberantColors.outline),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ref.read(authProvider.notifier).signOut();
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ViberantColors.error,
             ),
             child: const Text('Sign Out'),
           ),
         ],
       ),
     );
+    if (confirmed == true && mounted) {
+      await ref.read(authProvider.notifier).signOut();
+    }
   }
 }
 
-class _EmployeeHome extends StatelessWidget {
-  final dynamic user;
-  const _EmployeeHome({required this.user});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Greeting card
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [scheme.primary, scheme.primaryContainer],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(ViberantRadius.card),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Good ${_greeting()},',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.8),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user.displayName,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user.businessName,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    user.displayName.isNotEmpty
-                        ? user.displayName[0].toUpperCase()
-                        : '?',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        // Quick action grid
-        Text(
-          'Quick Actions',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: scheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.6,
-          children: [
-            _QuickCard(
-              icon: Icons.point_of_sale_rounded,
-              label: 'New Sale',
-              color: scheme.primary,
-              onTap: () {},
-            ),
-            _QuickCard(
-              icon: Icons.receipt_long_rounded,
-              label: 'My Orders',
-              color: ViberantColors.secondary,
-              onTap: () {},
-            ),
-            _QuickCard(
-              icon: Icons.today_rounded,
-              label: "Today's Sales",
-              color: ViberantColors.tertiary,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TodaySalesPage()),
-              ),
-            ),
-            _QuickCard(
-              icon: Icons.history_rounded,
-              label: 'Full History',
-              color: ViberantColors.info,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const OrderHistoryPage()),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  String _greeting() {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'morning';
-    if (h < 17) return 'afternoon';
-    return 'evening';
-  }
-}
-
-class _QuickCard extends StatelessWidget {
+class _NavBtn extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color color;
+  final bool isActive;
+  final bool isLogout;
   final VoidCallback onTap;
-
-  const _QuickCard({
+  const _NavBtn({
     required this.icon,
     required this.label,
-    required this.color,
+    required this.isActive,
     required this.onTap,
+    this.isLogout = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final color = isLogout
+        ? ViberantColors.error
+        : isActive
+        ? ViberantColors.primary
+        : ViberantColors.outline;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(ViberantRadius.card),
-          boxShadow: ViberantShadows.level1,
+          color: isActive ? ViberantColors.primary.withOpacity(0.08) : null,
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(ViberantRadius.sm),
-              ),
-              child: Icon(icon, size: 16, color: color),
-            ),
+            Icon(icon, size: 22, color: color),
+            const SizedBox(height: 4),
             Text(
               label,
               style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                color: color,
               ),
             ),
           ],
@@ -382,8 +202,244 @@ class _QuickCard extends StatelessWidget {
   }
 }
 
-class _TabItem {
+// ─── User Home Page ───────────────────────────────────────────────────────────
+class UserHomePage extends ConsumerWidget {
+  final void Function(int) onNavigate;
+  const UserHomePage({required this.onNavigate, super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+    if (authState is! AuthAuthenticated) return const SizedBox.shrink();
+
+    final user = authState.user;
+    final todayData = ref.watch(todaySalesProvider);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+
+          // ── Greeting ──────────────────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Hi, Enjoy work Today 🤭',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: ViberantColors.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    user.displayName,
+                    style: GoogleFonts.poppins(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              StatusChip.role(user.isAdmin),
+            ],
+          ),
+          const SizedBox(height: 28),
+
+          // ── Quick Actions 2×2 Grid ───────────────────────────────────────
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            crossAxisSpacing: 14,
+            mainAxisSpacing: 14,
+            childAspectRatio: 1.1,
+            children: [
+              _ActionCard(
+                title: 'Start POS',
+                subtitle: 'Process new sales',
+                icon: Icons.point_of_sale_rounded,
+                color: ViberantColors.primary,
+                onTap: () => onNavigate(1),
+              ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
+              _ActionCard(
+                title: 'Sales History',
+                subtitle: 'Past transactions',
+                icon: Icons.history_rounded,
+                color: ViberantColors.success,
+                onTap: () =>
+                    AppNavigator.toOrderHistory(context, user.businessId),
+              ).animate().fadeIn(delay: 150.ms).slideY(begin: 0.1),
+              _ActionCard(
+                title: "Today's Sales",
+                subtitle: 'Daily summary',
+                icon: Icons.today_rounded,
+                color: ViberantColors.warning,
+                onTap: () =>
+                    AppNavigator.toTodaySales(context, user.businessId),
+              ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
+              _ActionCard(
+                title: 'Products',
+                subtitle: 'Browse inventory',
+                icon: Icons.inventory_2_rounded,
+                color: ViberantColors.info,
+                onTap: () => AppNavigator.toProducts(context, user.businessId),
+              ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.1),
+            ],
+          ),
+          const SizedBox(height: 28),
+
+          // ── Today's Summary Card ─────────────────────────────────────────
+          GestureDetector(
+            onTap: () => AppNavigator.toTodaySales(context, user.businessId),
+            child: todayData.when(
+              loading: () => const ShimmerCard(height: 100),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (sales) {
+                final revenue = sales.fold(0.0, (s, e) => s + e.finalAmount);
+                return ViberantCard(
+                  color: ViberantColors.primary.withOpacity(0.06),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              "Today's Summary",
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 14,
+                            color: ViberantColors.outline,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          _SummaryMetric(
+                            label: 'Total Revenue',
+                            value:
+                                '₵${NumberFormat('#,###.00').format(revenue)}',
+                            color: ViberantColors.primary,
+                          ),
+                          const SizedBox(width: 20),
+                          _SummaryMetric(
+                            label: 'Total Sales',
+                            value: '${sales.length}',
+                            color: ViberantColors.success,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ).animate().fadeIn(delay: 350.ms);
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
   final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ViberantCard(
+      padding: const EdgeInsets.all(16),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: ViberantColors.outline,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryMetric extends StatelessWidget {
   final String label;
-  const _TabItem({required this.icon, required this.label});
+  final String value;
+  final Color color;
+  const _SummaryMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: GoogleFonts.inter(fontSize: 11, color: ViberantColors.outline),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        style: GoogleFonts.poppins(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    ],
+  );
 }

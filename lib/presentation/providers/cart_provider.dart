@@ -1,15 +1,11 @@
-// lib/presentation/providers/cart_provider.dart
-// CHANGED: saleRepositoryProvider removed from this file.
-// It now lives in lib/presentation/providers/repositories/sale_repository_provider.dart
-// Import it from there wherever needed.
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import '../../data/repositories/sale_repository.dart';
 import '../../domain/entities/cart_item_entity.dart';
 import '../../domain/entities/product_entity.dart';
 import '../../domain/entities/sale_entity.dart';
-import '../../data/repositories/sale_repository.dart';
+export '../providers/sale_repository_provider.dart' show saleRepositoryProvider;
 
 final cartProvider = StateNotifierProvider<CartNotifier, List<CartItemEntity>>((
   ref,
@@ -23,11 +19,11 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
   void addProduct(ProductEntity product, {int quantity = 1, String? notes}) {
     final idx = state.indexWhere((i) => i.product.id == product.id);
     if (idx != -1) {
-      state = [...state]
-        ..[idx] = state[idx].copyWith(
-          quantity: state[idx].quantity + quantity,
-          notes: notes ?? state[idx].notes,
-        );
+      final updated = state[idx].copyWith(
+        quantity: state[idx].quantity + quantity,
+        notes: notes ?? state[idx].notes,
+      );
+      state = [...state]..[idx] = updated;
     } else {
       state = [
         ...state,
@@ -47,9 +43,8 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
     }
   }
 
-  void removeProduct(String productId) {
-    state = state.where((i) => i.product.id != productId).toList();
-  }
+  void removeProduct(String productId) =>
+      state = state.where((i) => i.product.id != productId).toList();
 
   void clearCart() => state = [];
 
@@ -68,8 +63,6 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
     String? customerName,
   }) async {
     if (state.isEmpty) throw Exception('Cart is empty');
-
-    debugPrint('📌 Processing sale for business: $businessId');
 
     final sale = SaleEntity(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -92,15 +85,16 @@ class CartNotifier extends StateNotifier<List<CartItemEntity>> {
     try {
       await saleRepository.processSale(sale);
       clearCart();
-      debugPrint('✅ Payment processed and cart cleared');
+      debugPrint('✅ Payment processed: ${sale.transactionId}');
       return sale;
-    } catch (e, st) {
-      debugPrint('❌ Payment failed: $e\n$st');
+    } catch (e) {
+      debugPrint('❌ Payment failed: $e');
       rethrow;
     }
   }
 }
 
+/// Derived summary — no Firestore reads, purely computed
 final cartSummaryProvider = Provider<CartSummary>((ref) {
   final cart = ref.watch(cartProvider);
   final subtotal = cart.fold(0.0, (s, i) => s + i.subtotal);

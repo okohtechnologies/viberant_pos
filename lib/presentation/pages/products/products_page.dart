@@ -1,20 +1,21 @@
-// lib/presentation/pages/products/products_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/constants/breakpoints.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+
+import '../../../core/theme/app_theme.dart';
+import '../../../domain/entities/product_entity.dart';
 import '../../../domain/states/auth_state.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/products_filter_provider.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/loading_shimmer.dart';
+import '../../widgets/common/widgets.dart';
 import '../../widgets/pos/category_filter.dart';
-import '../../widgets/pos/product_card.dart';
-import '../../providers/cart_provider.dart';
-import '../../providers/inventory_provider.dart';
+import '../inventory/widgets/add_product_dialog.dart';
 
 class ProductsPage extends ConsumerStatefulWidget {
-  const ProductsPage({super.key});
+  final String businessId;
+  const ProductsPage({super.key, required this.businessId});
 
   @override
   ConsumerState<ProductsPage> createState() => _ProductsPageState();
@@ -22,8 +23,9 @@ class ProductsPage extends ConsumerStatefulWidget {
 
 class _ProductsPageState extends ConsumerState<ProductsPage> {
   final _searchCtrl = TextEditingController();
-  String _query = '';
-  String _category = 'All';
+  String _searchQuery = '';
+  String _selectedCat = 'All';
+  List<String> _cats = ['All'];
 
   @override
   void dispose() {
@@ -34,119 +36,306 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
-    if (authState is! AuthAuthenticated) return const SizedBox.shrink();
+    final isAdmin = authState is AuthAuthenticated && authState.user.isAdmin;
 
-    final categoriesAsync = ref.watch(categoriesProvider);
-    final filteredAsync = ref.watch(
+    final productsAsync = ref.watch(
       filteredProductsProvider(
-        FilterParams(
-          businessId: authState.user.businessId,
-          searchQuery: _query,
-          category: _category == 'All' ? null : _category,
+        ProductsFilterParams(
+          businessId: widget.businessId,
+          searchQuery: _searchQuery,
+          category: _selectedCat == 'All' ? null : _selectedCat,
         ),
       ),
     );
-    final scheme = Theme.of(context).colorScheme;
-    final width = MediaQuery.of(context).size.width;
+
+    // Derive categories from unfiltered list
+    final allAsync = ref.watch(
+      filteredProductsProvider(
+        ProductsFilterParams(businessId: widget.businessId),
+      ),
+    );
+    allAsync.whenData((all) {
+      final cats = [
+        'All',
+        ...{...all.map((p) => p.category)},
+      ];
+      if (cats.length != _cats.length) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => setState(() => _cats = cats),
+        );
+      }
+    });
 
     return Scaffold(
-      backgroundColor: scheme.surface,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
-          // Search
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (v) => setState(() => _query = v),
-              decoration: InputDecoration(
-                hintText: 'Search products…',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                suffixIcon: _query.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _query = '');
-                        },
-                      )
-                    : null,
-              ),
-            ),
+          // App bar + search
+          _AppBar(
+            ctrl: _searchCtrl,
+            onSearch: (v) => setState(() => _searchQuery = v),
           ),
 
           // Category filter
-          categoriesAsync.when(
-            loading: () => const SizedBox(height: 36),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (cats) => CategoryFilter(
-              categories: cats,
-              selected: _category,
-              onSelected: (c) => setState(() => _category = c),
-            ),
+          CategoryFilter(
+            selectedCategory: _selectedCat,
+            onCategorySelected: (c) => setState(() => _selectedCat = c),
+            categories: _cats,
+            isMobile: true,
           ),
 
-          const SizedBox(height: 8),
-
-          // Grid
+          // List
           Expanded(
-            child: filteredAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(16),
-                child: ShimmerList(count: 8),
-              ),
+            child: productsAsync.when(
+              loading: () => const ShimmerList(count: 6, itemHeight: 76),
               error: (e, _) => EmptyState(
                 icon: Icons.error_outline_rounded,
-                title: 'Failed to load products',
+                title: 'Could not load products',
                 description: e.toString(),
               ),
               data: (products) {
                 if (products.isEmpty) {
                   return EmptyState(
-                    icon: Icons.search_off_rounded,
-                    title: _query.isNotEmpty ? 'No results' : 'No products',
-                    description: _query.isNotEmpty
-                        ? 'Try a different search term.'
-                        : 'No products available.',
+                    icon: Icons.inventory_2_outlined,
+                    title: _searchQuery.isEmpty ? 'No products' : 'No results',
+                    description: _searchQuery.isEmpty
+                        ? 'Products will appear here'
+                        : 'Try different search terms',
                   );
                 }
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: gridColumns(width),
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.72,
-                  ),
+                return ListView.builder(
+                  padding: const EdgeInsets.all(14),
                   itemCount: products.length,
-                  itemBuilder: (_, i) =>
-                      ProductCard(
-                        product: products[i],
-                        onTap: () {
-                          ref
-                              .read(cartProvider.notifier)
-                              .addProduct(products[i]);
-                          ScaffoldMessenger.of(context)
-                            ..clearSnackBars()
-                            ..showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '${products[i].name} added to cart',
-                                ),
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
-                        },
-                      ).animate().fadeIn(
-                        delay: Duration(milliseconds: i * 25),
-                        duration: 250.ms,
-                      ),
+                  itemBuilder: (_, i) => _ProductBrowseRow(
+                    product: products[i],
+                  ).animate().fadeIn(delay: (i * 35).ms).slideY(begin: 0.05),
                 );
               },
             ),
           ),
         ],
       ),
+
+      // FAB only for admins
+      floatingActionButton: isAdmin
+          ? FloatingActionButton(
+              onPressed: () {
+                if (authState is! AuthAuthenticated) return;
+                showDialog(
+                  context: context,
+                  builder: (_) => AddProductDialog(
+                    businessId: widget.businessId,
+                    onProductAdded: () =>
+                        ref.invalidate(filteredProductsProvider),
+                    isMobile: true,
+                  ),
+                );
+              },
+              child: const Icon(Icons.add_rounded),
+            )
+          : null,
     );
   }
+}
+
+// ─── App bar with search ──────────────────────────────────────────────────────
+class _AppBar extends StatelessWidget {
+  final TextEditingController ctrl;
+  final ValueChanged<String> onSearch;
+  const _AppBar({required this.ctrl, required this.onSearch});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: EdgeInsets.only(
+      top: MediaQuery.of(context).padding.top + 12,
+      left: 16,
+      right: 16,
+      bottom: 12,
+    ),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+      boxShadow: [
+        BoxShadow(
+          color: ViberantColors.primary.withOpacity(0.04),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Products',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: ctrl,
+          onChanged: onSearch,
+          decoration: const InputDecoration(
+            hintText: 'Search products…',
+            prefixIcon: Icon(Icons.search_rounded),
+            constraints: BoxConstraints(maxHeight: 44),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ─── Product browse row ───────────────────────────────────────────────────────
+class _ProductBrowseRow extends StatelessWidget {
+  final ProductEntity product;
+  const _ProductBrowseRow({required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.outlineVariant.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: ViberantColors.primary.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Thumbnail
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: ViberantColors.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              image: product.imageUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(product.imageUrl!),
+                      fit: BoxFit.cover,
+                      onError: (_, __) {},
+                    )
+                  : null,
+            ),
+            child: product.imageUrl == null
+                ? const Icon(
+                    Icons.shopping_bag_outlined,
+                    color: ViberantColors.primary,
+                    size: 22,
+                  )
+                : null,
+          ),
+          const SizedBox(width: 12),
+
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    _CatChip(product.category),
+                    if (product.sku != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        product.sku!,
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: ViberantColors.outline,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                StatusChip.fromStockStatus(product.stockStatus),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 10),
+
+          // Price + stock
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '₵${NumberFormat('#,###.00').format(product.price)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: ViberantColors.primary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${product.stock} in stock',
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  color: product.stockStatusColor,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CatChip extends StatelessWidget {
+  final String label;
+  const _CatChip(this.label);
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Text(
+      label,
+      style: GoogleFonts.inter(
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+        color: ViberantColors.outline,
+      ),
+    ),
+  );
 }

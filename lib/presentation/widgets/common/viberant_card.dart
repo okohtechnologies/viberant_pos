@@ -1,53 +1,65 @@
-// lib/presentation/widgets/common/viberant_card.dart
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:viberant_pos/core/theme/app_theme.dart';
 
-/// Base card container. All screens should use this instead of raw Card().
-/// Matches Stitch spec: 16px radius, Level 1 shadow, no border at rest,
-/// 2px primary border when [isSelected].
 class ViberantCard extends StatelessWidget {
   final Widget child;
-  final EdgeInsetsGeometry? padding;
-  final bool isSelected;
-  final VoidCallback? onTap;
+  final EdgeInsetsGeometry padding;
   final Color? color;
   final double borderRadius;
+  final bool showBorder;
+  final VoidCallback? onTap;
 
   const ViberantCard({
-    super.key,
     required this.child,
-    this.padding,
-    this.isSelected = false,
-    this.onTap,
+    this.padding = const EdgeInsets.all(16),
     this.color,
-    this.borderRadius = ViberantRadius.card,
+    this.borderRadius = 16,
+    this.showBorder = true,
+    this.onTap,
+    super.key,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final cardColor =
-        color ??
-        (Theme.of(context).brightness == Brightness.dark
-            ? scheme.surfaceContainer
-            : scheme.surfaceContainerLowest);
+    final theme = Theme.of(context);
+    final cardColor = color ?? theme.colorScheme.surface;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(borderRadius),
-          border: isSelected
-              ? Border.all(color: scheme.primary, width: 2)
-              : null,
-          boxShadow: ViberantShadows.level1,
-        ),
-        child: padding != null
-            ? Padding(padding: padding!, child: child)
-            : child,
+    Widget card = Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: showBorder
+            ? Border.all(
+                color: theme.colorScheme.outlineVariant.withOpacity(0.4),
+                width: 0.5,
+              )
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: ViberantColors.primary.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
+      padding: padding,
+      child: child,
     );
+
+    if (onTap != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(borderRadius),
+            splashColor: ViberantColors.primary.withOpacity(0.06),
+            child: card,
+          ),
+        ),
+      );
+    }
+    return card;
   }
 }

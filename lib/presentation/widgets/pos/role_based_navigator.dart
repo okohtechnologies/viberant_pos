@@ -1,70 +1,52 @@
-// lib/presentation/widgets/pos/role_based_navigator.dart
-// Utility widget that shows different content based on
-// the current user's role. Use anywhere you need
-// admin-only or staff-only UI branches.
+// lib/presentation/widgets/role_based_navigator.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../domain/states/auth_state.dart';
-import '../../providers/auth_provider.dart';
+import 'package:viberant_pos/presentation/pages/auth/login_page.dart';
+import 'package:viberant_pos/presentation/pages/main_layout.dart';
+import 'package:viberant_pos/presentation/providers/auth_provider.dart';
+import 'package:viberant_pos/presentation/pages/user_layout.dart';
 
-class RoleGuard extends ConsumerWidget {
-  /// Shown when the user is an admin.
-  final Widget admin;
-
-  /// Shown when the user is a staff member.
-  /// Falls back to [admin] if not provided.
-  final Widget? staff;
-
-  /// Shown while auth state is loading or unauthenticated.
-  final Widget? fallback;
-
-  const RoleGuard({super.key, required this.admin, this.staff, this.fallback});
+class RoleBasedNavigator extends ConsumerWidget {
+  const RoleBasedNavigator({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authProvider);
+    final authState = ref.watch(authProvider);
 
-    if (auth is AuthAuthenticated) {
-      if (auth.user.isAdmin) return admin;
-      return staff ?? admin;
-    }
-
-    return fallback ?? const SizedBox.shrink();
-  }
-}
-
-/// Convenience widget — only renders [child] for admin users.
-/// Renders nothing (or [fallback]) for staff.
-class AdminOnly extends ConsumerWidget {
-  final Widget child;
-  final Widget? fallback;
-
-  const AdminOnly({super.key, required this.child, this.fallback});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authProvider);
-    if (auth is AuthAuthenticated && auth.user.isAdmin) {
-      return child;
-    }
-    return fallback ?? const SizedBox.shrink();
-  }
-}
-
-/// Convenience widget — only renders [child] for staff users.
-/// Renders nothing (or [fallback]) for admins.
-class StaffOnly extends ConsumerWidget {
-  final Widget child;
-  final Widget? fallback;
-
-  const StaffOnly({super.key, required this.child, this.fallback});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authProvider);
-    if (auth is AuthAuthenticated && !auth.user.isAdmin) {
-      return child;
-    }
-    return fallback ?? const SizedBox.shrink();
+    return authState.when(
+      initial: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      authenticated: (user) {
+        // Admin goes to dashboard, User goes directly to POS
+        if (user.isAdmin) {
+          return const MainLayout(); // Or DashboardPage if different
+        } else {
+          return const UserLayout(); // POS will be the default for users
+        }
+      },
+      unauthenticated: () => const LoginPage(), // Show login page
+      error: (error) => Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('Authentication Error'),
+              const SizedBox(height: 8),
+              Text(error),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () =>
+                    ref.read(authProvider.notifier).checkAuthStatus(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

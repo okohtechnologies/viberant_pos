@@ -1,330 +1,353 @@
-// lib/presentation/pages/pos/pos_page.dart
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:intl/intl.dart';
+
 import '../../../core/constants/breakpoints.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/product_entity.dart';
-import '../../../domain/entities/sale_entity.dart';
+import '../../../domain/states/auth_state.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
-import '../../providers/inventory_provider.dart';
 import '../../providers/products_provider.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/loading_shimmer.dart';
+import '../../widgets/common/widgets.dart';
 import '../../widgets/pos/cart_panel.dart';
 import '../../widgets/pos/category_filter.dart';
-import '../../widgets/pos/payment_modal.dart';
-import '../../widgets/pos/product_card.dart';
 
-class PosPage extends ConsumerStatefulWidget {
+class PosPage extends HookConsumerWidget {
   const PosPage({super.key});
 
   @override
-  ConsumerState<PosPage> createState() => _PosPageState();
-}
-
-class _PosPageState extends ConsumerState<PosPage> {
-  final _searchCtrl = TextEditingController();
-  String _query = '';
-  String _category = 'All';
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  List<ProductEntity> _filter(List<ProductEntity> all) {
-    return all.where((p) {
-      if (p.stock <= 0) return false;
-      final matchQ =
-          _query.isEmpty || p.name.toLowerCase().contains(_query.toLowerCase());
-      final matchC = _category == 'All' || p.category == _category;
-      return matchQ && matchC;
-    }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final searchCtrl = useTextEditingController();
+    final searchQuery = useState('');
+    final selectedCategory = useState('All');
     final productsAsync = ref.watch(productsProvider);
-    final categoriesAsync = ref.watch(categoriesProvider);
-    final cartSummary = ref.watch(cartSummaryProvider);
-    final scheme = Theme.of(context).colorScheme;
+    final authState = ref.watch(authProvider);
     final width = MediaQuery.of(context).size.width;
-    final isDesktop = width >= Breakpoints.desktop;
+    final isMobile = width < Breakpoints.mobile;
 
-    return Scaffold(
-      backgroundColor: scheme.surface,
-      body: isDesktop
-          ? _buildDesktopLayout(productsAsync, categoriesAsync, scheme)
-          : _buildMobileLayout(
-              productsAsync,
-              categoriesAsync,
-              cartSummary,
-              scheme,
-            ),
-    );
-  }
-
-  Widget _buildDesktopLayout(
-    AsyncValue<List<ProductEntity>> productsAsync,
-    AsyncValue<List<String>> categoriesAsync,
-    ColorScheme scheme,
-  ) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 63,
-          child: _buildProductArea(productsAsync, categoriesAsync, scheme),
-        ),
-        SizedBox(
-          width: MediaQuery.of(context).size.width * 0.37,
-          child: CartPanel(onSaleComplete: _onSaleComplete),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMobileLayout(
-    AsyncValue<List<ProductEntity>> productsAsync,
-    AsyncValue<List<String>> categoriesAsync,
-    CartSummary cartSummary,
-    ColorScheme scheme,
-  ) {
-    return Stack(
-      children: [
-        _buildProductArea(productsAsync, categoriesAsync, scheme),
-        if (cartSummary.totalItems > 0)
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: _CartFAB(
-              summary: cartSummary,
-              onTap: () async {
-                final sale = await showModalBottomSheet<SaleEntity>(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (_) => const PaymentModal(),
-                );
-                if (sale != null) _onSaleComplete(sale);
-              },
-              onViewCart: () => showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => DraggableScrollableSheet(
-                  initialChildSize: 0.6,
-                  maxChildSize: 0.92,
-                  minChildSize: 0.4,
-                  expand: false,
-                  builder: (_, ctrl) =>
-                      CartPanel(onSaleComplete: _onSaleComplete),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildProductArea(
-    AsyncValue<List<ProductEntity>> productsAsync,
-    AsyncValue<List<String>> categoriesAsync,
-    ColorScheme scheme,
-  ) {
-    return Column(
-      children: [
-        // Search bar
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: TextField(
-            controller: _searchCtrl,
-            onChanged: (v) => setState(() => _query = v),
-            decoration: InputDecoration(
-              hintText: 'Search products…',
-              prefixIcon: const Icon(Icons.search_rounded, size: 20),
-              suffixIcon: _query.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      onPressed: () {
-                        _searchCtrl.clear();
-                        setState(() => _query = '');
-                      },
-                    )
-                  : null,
-            ),
-          ),
-        ),
-
-        // Category chips
-        categoriesAsync.when(
-          loading: () => const SizedBox(height: 36),
-          error: (_, __) => const SizedBox.shrink(),
-          data: (cats) => CategoryFilter(
-            categories: cats,
-            selected: _category,
-            onSelected: (c) => setState(() => _category = c),
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // Product grid
-        Expanded(
-          child: productsAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(16),
-              child: ShimmerList(count: 8),
-            ),
-            error: (e, _) => EmptyState(
-              icon: Icons.error_outline_rounded,
-              title: 'Failed to load products',
-              description: e.toString(),
-            ),
-            data: (all) {
-              final products = _filter(all);
-              if (products.isEmpty) {
-                return EmptyState(
-                  icon: Icons.search_off_rounded,
-                  title: _query.isNotEmpty ? 'No results' : 'No products',
-                  description: _query.isNotEmpty
-                      ? 'Try a different search term.'
-                      : 'Add products in the Inventory tab.',
-                );
-              }
-              final width = MediaQuery.of(context).size.width;
-              return GridView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: gridColumns(width),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.72,
-                ),
-                itemCount: products.length,
-                itemBuilder: (_, i) =>
-                    ProductCard(
-                      product: products[i],
-                      onTap: () {
-                        ref.read(cartProvider.notifier).addProduct(products[i]);
-                        _showAddedFeedback(products[i].name);
-                      },
-                    ).animate().fadeIn(
-                      delay: Duration(milliseconds: i * 30),
-                      duration: 250.ms,
-                    ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showAddedFeedback(String name) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('$name added to cart'),
-          duration: const Duration(seconds: 1),
+    if (authState is! AuthAuthenticated) {
+      return const Scaffold(
+        body: EmptyState(
+          icon: Icons.login_rounded,
+          title: 'Please Sign In',
+          description: 'You need to be signed in to use the POS',
         ),
       );
-  }
+    }
 
-  void _onSaleComplete(SaleEntity sale) {
-    showDialog(
-      context: context,
-      builder: (_) => _SuccessDialog(sale: sale),
+    return productsAsync.when(
+      loading: () => Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: Column(
+          children: [
+            _PosHeader(ctrl: searchCtrl, onSearch: (_) {}, isMobile: isMobile),
+            const Expanded(child: ShimmerGrid(count: 6, crossAxisCount: 2)),
+          ],
+        ),
+      ),
+      error: (e, _) => Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: EmptyState(
+          icon: Icons.error_outline_rounded,
+          title: 'Could not load products',
+          description: e.toString(),
+          actionLabel: 'Retry',
+          onAction: () => ref.invalidate(productsProvider),
+        ),
+      ),
+      data: (products) {
+        final filtered = products.where((p) {
+          final q = searchQuery.value.toLowerCase();
+          final matchQ =
+              p.name.toLowerCase().contains(q) ||
+              p.description.toLowerCase().contains(q) ||
+              (p.sku?.toLowerCase().contains(q) ?? false);
+          final matchCat =
+              selectedCategory.value == 'All' ||
+              p.category == selectedCategory.value;
+          return matchQ && matchCat && p.stock > 0;
+        }).toList();
+
+        final categories = [
+          'All',
+          ...{...products.map((p) => p.category)},
+        ];
+
+        if (isMobile) {
+          return _MobileLayout(
+            searchCtrl: searchCtrl,
+            searchQuery: searchQuery,
+            selectedCategory: selectedCategory,
+            categories: categories,
+            products: filtered,
+          );
+        }
+        return _DesktopLayout(
+          searchCtrl: searchCtrl,
+          searchQuery: searchQuery,
+          selectedCategory: selectedCategory,
+          categories: categories,
+          products: filtered,
+        );
+      },
     );
   }
 }
 
-class _CartFAB extends StatelessWidget {
-  final CartSummary summary;
-  final VoidCallback onTap;
-  final VoidCallback onViewCart;
+// ─── Desktop layout (63/37 split) ────────────────────────────────────────────
+class _DesktopLayout extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final ValueNotifier<String> searchQuery;
+  final ValueNotifier<String> selectedCategory;
+  final List<String> categories;
+  final List<ProductEntity> products;
 
-  const _CartFAB({
-    required this.summary,
-    required this.onTap,
-    required this.onViewCart,
+  const _DesktopLayout({
+    required this.searchCtrl,
+    required this.searchQuery,
+    required this.selectedCategory,
+    required this.categories,
+    required this.products,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onViewCart,
-        borderRadius: BorderRadius.circular(ViberantRadius.card),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          decoration: BoxDecoration(
-            color: scheme.primary,
-            borderRadius: BorderRadius.circular(ViberantRadius.card),
-            boxShadow: ViberantShadows.level4Modal,
-          ),
-          child: Row(
+    return Row(
+      children: [
+        Expanded(
+          flex: 63,
+          child: Column(
             children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '${summary.totalItems}',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
+              _PosHeader(
+                ctrl: searchCtrl,
+                onSearch: (v) => searchQuery.value = v,
+                isMobile: false,
               ),
-              const SizedBox(width: 12),
+              CategoryFilter(
+                selectedCategory: selectedCategory.value,
+                onCategorySelected: (c) => selectedCategory.value = c,
+                categories: categories,
+                isMobile: false,
+              ),
               Expanded(
-                child: Text(
-                  'View Cart',
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
+                child: products.isEmpty
+                    ? EmptyState(
+                        icon: Icons.search_off_rounded,
+                        title: searchQuery.value.isEmpty
+                            ? 'No products available'
+                            : 'No results',
+                        description: searchQuery.value.isEmpty
+                            ? 'Add products in Inventory'
+                            : 'Try a different search',
+                      )
+                    : _ProductGrid(products: products, isMobile: false),
               ),
-              Text(
-                'GHS ${summary.totalAmount.toStringAsFixed(2)}',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+            ],
+          ),
+        ),
+        Container(
+          width: 0.5,
+          color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.4),
+        ),
+        const Expanded(flex: 37, child: CartPanel()),
+      ],
+    );
+  }
+}
+
+// ─── Mobile layout ────────────────────────────────────────────────────────────
+class _MobileLayout extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final ValueNotifier<String> searchQuery;
+  final ValueNotifier<String> selectedCategory;
+  final List<String> categories;
+  final List<ProductEntity> products;
+
+  const _MobileLayout({
+    required this.searchCtrl,
+    required this.searchQuery,
+    required this.selectedCategory,
+    required this.categories,
+    required this.products,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _PosHeader(
+              ctrl: searchCtrl,
+              onSearch: (v) => searchQuery.value = v,
+              isMobile: true,
+            ),
+            CategoryFilter(
+              selectedCategory: selectedCategory.value,
+              onCategorySelected: (c) => selectedCategory.value = c,
+              categories: categories,
+              isMobile: true,
+            ),
+            Expanded(
+              child: products.isEmpty
+                  ? EmptyState(
+                      icon: Icons.search_off_rounded,
+                      title: searchQuery.value.isEmpty
+                          ? 'No products'
+                          : 'No results',
+                      description: searchQuery.value.isEmpty
+                          ? 'Add products in Inventory'
+                          : 'Try different terms',
+                    )
+                  : _ProductGrid(products: products, isMobile: true),
+            ),
+            const _MobileCartBar(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Product grid ─────────────────────────────────────────────────────────────
+class _ProductGrid extends StatelessWidget {
+  final List<ProductEntity> products;
+  final bool isMobile;
+  const _ProductGrid({required this.products, required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    final cols = isMobile ? 2 : 3;
+    return GridView.builder(
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols,
+        crossAxisSpacing: isMobile ? 10 : 12,
+        mainAxisSpacing: isMobile ? 10 : 12,
+        childAspectRatio: isMobile ? 0.72 : 0.78,
+      ),
+      itemCount: products.length,
+      itemBuilder: (_, i) => _ProductCard(
+        product: products[i],
+      ).animate().fadeIn(delay: (i * 30).ms).slideY(begin: 0.06, end: 0),
+    );
+  }
+}
+
+// ─── Product card ─────────────────────────────────────────────────────────────
+class _ProductCard extends ConsumerWidget {
+  final ProductEntity product;
+  const _ProductCard({required this.product});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cart = ref.watch(cartProvider);
+    final qty =
+        cart.firstWhereOrNull((i) => i.product.id == product.id)?.quantity ?? 0;
+    final cs = Theme.of(context).colorScheme;
+
+    return Material(
+      color: cs.surface,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          if (product.stock > 0) {
+            ref.read(cartProvider.notifier).addProduct(product);
+          }
+        },
+        splashColor: ViberantColors.primary.withOpacity(0.08),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: qty > 0
+                  ? ViberantColors.primary.withOpacity(0.3)
+                  : cs.outlineVariant.withOpacity(0.3),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: ViberantColors.primary.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onTap,
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image area
+              Expanded(
+                flex: 5,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
+                  width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(ViberantRadius.full),
-                  ),
-                  child: Text(
-                    'Pay',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                    color: ViberantColors.primary.withOpacity(0.07),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
                     ),
+                  ),
+                  child: product.imageUrl != null
+                      ? ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
+                          child: Image.network(
+                            product.imageUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _PlaceholderIcon(),
+                          ),
+                        )
+                      : _PlaceholderIcon(),
+                ),
+              ),
+
+              // Info
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        product.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '₵${NumberFormat('#,###.00').format(product.price)}',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: ViberantColors.primary,
+                            ),
+                          ),
+
+                          // Stock badge / qty indicator
+                          if (qty == 0)
+                            _StockBadge(product: product)
+                          else
+                            _QtyBadge(qty: qty),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -336,66 +359,201 @@ class _CartFAB extends StatelessWidget {
   }
 }
 
-class _SuccessDialog extends StatelessWidget {
-  final SaleEntity sale;
-  const _SuccessDialog({required this.sale});
+class _PlaceholderIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Icon(
+      Icons.shopping_bag_outlined,
+      color: ViberantColors.primary.withOpacity(0.4),
+      size: 36,
+    ),
+  );
+}
+
+class _StockBadge extends StatelessWidget {
+  final ProductEntity product;
+  const _StockBadge({required this.product});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ViberantRadius.lg),
+    final color = product.isLowStock
+        ? ViberantColors.warning
+        : ViberantColors.success;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Text(
+        '${product.stock}',
+        style: GoogleFonts.inter(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _QtyBadge extends StatelessWidget {
+  final int qty;
+  const _QtyBadge({required this.qty});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: ViberantColors.primary,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      '$qty',
+      style: GoogleFonts.inter(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: Colors.white,
+      ),
+    ),
+  ).animate().scale(duration: 200.ms, curve: Curves.elasticOut);
+}
+
+// ─── POS Header ───────────────────────────────────────────────────────────────
+class _PosHeader extends StatelessWidget {
+  final TextEditingController ctrl;
+  final ValueChanged<String> onSearch;
+  final bool isMobile;
+  const _PosHeader({
+    required this.ctrl,
+    required this.onSearch,
+    required this.isMobile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 16,
+        vertical: isMobile ? 10 : 12,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(
+              context,
+            ).colorScheme.outlineVariant.withOpacity(0.3),
+          ),
+        ),
+      ),
+      child: Row(
         children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: ViberantColors.success.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.check_circle_rounded,
-              size: 32,
-              color: ViberantColors.success,
-            ),
-          ).animate().scale(duration: 400.ms, curve: Curves.elasticOut),
-          const SizedBox(height: 16),
-          Text(
-            'Payment Successful!',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: scheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'GHS ${sale.finalAmount.toStringAsFixed(2)}  ·  ${sale.items.length} item${sale.items.length == 1 ? '' : 's'}',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            sale.transactionId,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant,
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              onChanged: onSearch,
+              decoration: InputDecoration(
+                hintText: 'Search products, SKU…',
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: ViberantColors.outline,
+                ),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                suffixIcon: ctrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        onPressed: () {
+                          ctrl.clear();
+                          onSearch('');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 0,
+                ),
+                constraints: const BoxConstraints(maxHeight: 44),
+              ),
             ),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Done'),
+    );
+  }
+}
+
+// ─── Mobile cart bar (bottom) ─────────────────────────────────────────────────
+class _MobileCartBar extends ConsumerWidget {
+  const _MobileCartBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = ref.watch(cartSummaryProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        border: Border(
+          top: BorderSide(color: cs.outlineVariant.withOpacity(0.3)),
         ),
-      ],
+      ),
+      child: Row(
+        children: [
+          // Cart info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${summary.totalItems} items in cart',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: ViberantColors.outline,
+                  ),
+                ),
+                Text(
+                  '₵${NumberFormat('#,###.00').format(summary.totalAmount)}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: ViberantColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // View Cart button
+          ElevatedButton.icon(
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => SizedBox(
+                height: MediaQuery.of(context).size.height * 0.82,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  child: const CartPanel(),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.shopping_cart_rounded, size: 18),
+            label: const Text('View Cart'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

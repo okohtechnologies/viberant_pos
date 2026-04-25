@@ -1,281 +1,428 @@
-// lib/presentation/widgets/pos/payment_modal.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:viberant_pos/presentation/providers/sale_repository_provider.dart';
+import 'package:intl/intl.dart';
+
+import '../../../core/services/receipt_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/sale_entity.dart';
 import '../../providers/cart_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../../domain/states/auth_state.dart';
 
 class PaymentModal extends ConsumerStatefulWidget {
-  const PaymentModal({super.key});
+  final double totalAmount;
+  final VoidCallback onPaymentComplete;
+  final String businessId;
+  final String cashierId;
+  final String cashierName;
+
+  const PaymentModal({
+    super.key,
+    required this.totalAmount,
+    required this.onPaymentComplete,
+    required this.businessId,
+    required this.cashierId,
+    required this.cashierName,
+  });
 
   @override
   ConsumerState<PaymentModal> createState() => _PaymentModalState();
 }
 
 class _PaymentModalState extends ConsumerState<PaymentModal> {
-  PaymentMethod _selected = PaymentMethod.cash;
-  bool _isProcessing = false;
-  final _customerCtrl = TextEditingController();
+  PaymentMethod? _selected;
+  bool _processing = false;
 
   static const _methods = [
-    _PayMethod(PaymentMethod.cash, Icons.payments_rounded, 'Cash'),
-    _PayMethod(PaymentMethod.momo, Icons.phone_android_rounded, 'MoMo'),
-    _PayMethod(PaymentMethod.card, Icons.credit_card_rounded, 'Card'),
-    _PayMethod(
-      PaymentMethod.bankTransfer,
-      Icons.account_balance_rounded,
-      'Bank',
+    (PaymentMethod.cash, 'Cash', Icons.money_rounded, ViberantColors.success),
+    (
+      PaymentMethod.momo,
+      'Mobile Money',
+      Icons.phone_android_rounded,
+      ViberantColors.primary,
     ),
-    _PayMethod(PaymentMethod.credit, Icons.handshake_outlined, 'Credit'),
+    (
+      PaymentMethod.card,
+      'Card',
+      Icons.credit_card_rounded,
+      ViberantColors.warning,
+    ),
+    (
+      PaymentMethod.bankTransfer,
+      'Bank Transfer',
+      Icons.account_balance_rounded,
+      ViberantColors.info,
+    ),
+    (
+      PaymentMethod.credit,
+      'Credit',
+      Icons.receipt_long_rounded,
+      ViberantColors.error,
+    ),
   ];
 
   @override
-  void dispose() {
-    _customerCtrl.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fmt = NumberFormat('#,###.00');
+
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ViberantColors.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Title
+              Text(
+                'Process Payment',
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '₵${fmt.format(widget.totalAmount)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  color: ViberantColors.primary,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Payment method grid (2 columns)
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 2.2,
+                children: _methods.map((m) {
+                  final (method, name, icon, color) = m;
+                  final isSelected = _selected == method;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selected = method),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? color.withOpacity(0.1)
+                            : cs.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? color
+                              : cs.outlineVariant.withOpacity(0.4),
+                          width: isSelected ? 2 : 0.5,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(icon, size: 22, color: color),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected ? color : cs.onSurface,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 52,
+                      child: OutlinedButton(
+                        onPressed: _processing
+                            ? null
+                            : () => Navigator.pop(context),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: (_processing || _selected == null)
+                            ? null
+                            : _confirmPayment,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _selected == null
+                              ? ViberantColors.outline
+                              : ViberantColors.primary,
+                        ),
+                        child: _processing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : Text(
+                                'Confirm Payment',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  Future<void> _confirm() async {
-    final auth = ref.read(authProvider);
-    if (auth is! AuthAuthenticated) return;
-    final cart = ref.read(cartProvider.notifier);
-    final repo = ref.read(saleRepositoryProvider);
+  Future<void> _confirmPayment() async {
+    if (_selected == null) return;
 
-    setState(() => _isProcessing = true);
-    try {
-      final sale = await cart.processPayment(
-        businessId: auth.user.businessId,
-        cashierId: auth.user.id,
-        cashierName: auth.user.displayName,
-        paymentMethod: _selected,
-        saleRepository: repo,
-        customerName: _customerCtrl.text.trim().isNotEmpty
-            ? _customerCtrl.text.trim()
-            : null,
-      );
-      if (mounted) Navigator.pop(context, sale);
-    } catch (e) {
-      setState(() => _isProcessing = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+    // Confirm dialog
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        final (_, name, icon, color) = _methods.firstWhere(
+          (m) => m.$1 == _selected,
         );
+        return AlertDialog(
+          title: Text(
+            'Confirm Payment',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    name,
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '₵${NumberFormat('#,###.00').format(widget.totalAmount)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: ViberantColors.primary,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (ok != true || !mounted) return;
+    setState(() => _processing = true);
+
+    try {
+      final sale = await ref
+          .read(cartProvider.notifier)
+          .processPayment(
+            businessId: widget.businessId,
+            cashierId: widget.cashierId,
+            cashierName: widget.cashierName,
+            paymentMethod: _selected!,
+            saleRepository: ref.read(saleRepositoryProvider),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (mounted) {
+        Navigator.pop(context);
+        _showSuccess(sale);
       }
+    } catch (e) {
+      if (mounted) _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _processing = false);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final summary = ref.watch(cartSummaryProvider);
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(ViberantRadius.lg),
+  void _showSuccess(SaleEntity sale) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_rounded,
+              color: ViberantColors.success,
+              size: 24,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Payment Successful',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        top: 12,
-        left: 24,
-        right: 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: scheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
+                color: ViberantColors.primary.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(12),
               ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          Text(
-            'Payment',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'GHS ${summary.totalAmount.toStringAsFixed(2)}',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 32,
-              fontWeight: FontWeight.w700,
-              color: scheme.primary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Subtotal GHS ${summary.subtotal.toStringAsFixed(2)}  ·  Tax GHS ${summary.taxAmount.toStringAsFixed(2)}',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Payment method grid
-          Text(
-            'Payment method',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 10),
-          GridView.count(
-            crossAxisCount: 5,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.9,
-            children: _methods
-                .map(
-                  (m) => _MethodTile(
-                    method: m,
-                    isSelected: _selected == m.method,
-                    onTap: () => setState(() => _selected = m.method),
-                  ),
-                )
-                .toList(),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Customer name (optional)
-          Text(
-            'Customer name (optional)',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _customerCtrl,
-            style: GoogleFonts.inter(fontSize: 14, color: scheme.onSurface),
-            decoration: InputDecoration(
-              hintText: 'Walk-in customer',
-              prefixIcon: const Icon(Icons.person_outline_rounded, size: 18),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Confirm button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isProcessing ? null : _confirm,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: scheme.primary,
-                foregroundColor: scheme.onPrimary,
-                minimumSize: const Size(double.infinity, 56),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(ViberantRadius.card),
-                ),
-                elevation: 0,
-              ),
-              child: _isProcessing
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation(Colors.white),
-                      ),
-                    )
-                  : Text(
-                      'Confirm Payment',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+              child: Column(
+                children: [
+                  Text(
+                    '₵${NumberFormat('#,###.00').format(sale.finalAmount)}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: ViberantColors.primary,
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'TXN: ${sale.transactionId}',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: ViberantColors.outline,
+                    ),
+                  ),
+                  Text(
+                    '${sale.items.length} items · ${sale.cashierName}',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: ViberantColors.outline,
+                    ),
+                  ),
+                ],
+              ),
             ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              widget.onPaymentComplete();
+            },
+            child: const Text('Done'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              ReceiptService.generateAndShareReceipt(sale, context);
+            },
+            icon: const Icon(Icons.share_rounded, size: 16),
+            label: const Text('Share Receipt'),
           ),
         ],
       ),
     );
   }
-}
 
-class _PayMethod {
-  final PaymentMethod method;
-  final IconData icon;
-  final String label;
-  const _PayMethod(this.method, this.icon, this.label);
-}
+  void _showError(String error) {
+    String msg = error;
+    if (error.contains('Cart is empty'))
+      msg = 'Cart is empty';
+    else if (error.contains('Insufficient stock'))
+      msg = 'Insufficient stock for one or more items';
+    else if (error.contains('timed out'))
+      msg = 'Payment timed out. Check your connection';
+    else
+      msg = error.replaceAll('Exception:', '').trim();
 
-class _MethodTile extends StatelessWidget {
-  final _PayMethod method;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _MethodTile({
-    required this.method,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? scheme.primary.withValues(alpha: 0.1)
-              : scheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(ViberantRadius.md),
-          border: isSelected
-              ? Border.all(color: scheme.primary, width: 1.5)
-              : null,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Row(
           children: [
-            Icon(
-              method.icon,
-              size: 22,
-              color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+            const Icon(
+              Icons.error_outline_rounded,
+              color: ViberantColors.error,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(width: 8),
             Text(
-              method.label,
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
-              ),
+              'Payment Failed',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
             ),
           ],
         ),
+        content: Text(
+          msg,
+          style: GoogleFonts.inter(color: ViberantColors.outline),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
   }

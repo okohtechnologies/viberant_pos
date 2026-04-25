@@ -1,4 +1,3 @@
-// lib/presentation/pages/settings/settings_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,10 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../domain/states/auth_state.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../widgets/common/app_avatar.dart';
-import '../../widgets/common/viberant_card.dart';
-import '../../pages/admin/users_management_page.dart';
-import '../../pages/reports/sales_report_page.dart';
+import '../../widgets/common/widgets.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -18,208 +14,203 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
     final themeMode = ref.watch(themeModeProvider);
-    final themeNotifier = ref.read(themeModeProvider.notifier);
-    final scheme = Theme.of(context).colorScheme;
 
-    if (authState is! AuthAuthenticated) return const SizedBox.shrink();
+    if (authState is! AuthAuthenticated) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     final user = authState.user;
+    final isDark =
+        themeMode == ThemeMode.dark ||
+        (themeMode == ThemeMode.system &&
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Profile card
-        ViberantCard(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              AppAvatar(name: user.displayName, size: 56),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user.displayName,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      user.email,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(
-                          ViberantRadius.full,
-                        ),
-                      ),
-                      child: Text(
-                        user.isAdmin ? 'Admin' : 'Staff',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 24),
-        _SectionLabel('Business'),
-        const SizedBox(height: 8),
-        ViberantCard(
-          child: Column(
-            children: [
-              _SettingsTile(
-                icon: Icons.store_rounded,
-                label: 'Business Name',
-                trailing: Text(
-                  user.businessName,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const Divider(height: 1, indent: 52),
-              _SettingsTile(
-                icon: Icons.badge_rounded,
-                label: 'Business ID',
-                trailing: Text(
-                  user.businessId.length > 12
-                      ? '${user.businessId.substring(0, 12)}…'
-                      : user.businessId,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 20),
-        _SectionLabel('Appearance'),
-        const SizedBox(height: 8),
-        ViberantCard(
-          child: _SettingsTile(
-            icon: Icons.dark_mode_rounded,
-            label: 'Dark Mode',
-            trailing: Switch(
-              value: themeMode == ThemeMode.dark,
-              onChanged: (v) => themeNotifier.setThemeMode(
-                v ? ThemeMode.dark : ThemeMode.light,
-              ),
-              activeColor: scheme.primary,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Settings',
+            style: GoogleFonts.poppins(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
-        ),
+          const SizedBox(height: 4),
+          Text(
+            'Manage your account and preferences',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
 
-        if (user.isAdmin) ...[
-          const SizedBox(height: 20),
-          _SectionLabel('Admin'),
-          const SizedBox(height: 8),
-          ViberantCard(
-            child: Column(
-              children: [
-                _SettingsTile(
-                  icon: Icons.people_rounded,
-                  label: 'Manage Staff',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const UsersManagementPage(),
+          // ── Account section ────────────────────────────────────────────────
+          SectionLabel('Account'),
+          _Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Avatar with initials
+                  AppAvatar(name: user.displayName, radius: 28),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.displayName,
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          user.email,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        StatusChip.role(user.isAdmin),
+                      ],
                     ),
                   ),
-                  showChevron: true,
+                ],
+              ),
+            ),
+          ),
+
+          // ── Appearance section ─────────────────────────────────────────────
+          SectionLabel('Appearance'),
+          _Card(
+            child: Column(
+              children: [
+                _SwitchTile(
+                  icon: isDark
+                      ? Icons.dark_mode_rounded
+                      : Icons.light_mode_rounded,
+                  title: 'Dark Mode',
+                  subtitle: isDark ? 'Dark theme active' : 'Light theme active',
+                  value: isDark,
+                  onChanged: (v) => ref
+                      .read(themeModeProvider.notifier)
+                      .setThemeMode(v ? ThemeMode.dark : ThemeMode.light),
                 ),
-                const Divider(height: 1, indent: 52),
-                _SettingsTile(
-                  icon: Icons.bar_chart_rounded,
-                  label: 'Sales Reports',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SalesReportPage()),
-                  ),
-                  showChevron: true,
+                _Divider(),
+                _SwitchTile(
+                  icon: Icons.phone_android_rounded,
+                  title: 'Use System Theme',
+                  subtitle: 'Follow device settings',
+                  value: themeMode == ThemeMode.system,
+                  onChanged: (v) => ref
+                      .read(themeModeProvider.notifier)
+                      .setThemeMode(v ? ThemeMode.system : ThemeMode.light),
                 ),
               ],
             ),
           ),
-        ],
 
-        const SizedBox(height: 20),
-        _SectionLabel('Account'),
-        const SizedBox(height: 8),
-        ViberantCard(
-          child: _SettingsTile(
-            icon: Icons.logout_rounded,
-            label: 'Sign Out',
-            iconColor: scheme.error,
-            labelColor: scheme.error,
-            onTap: () => _confirmSignOut(context, ref),
-          ),
-        ),
-
-        const SizedBox(height: 32),
-        Center(
-          child: Text(
-            'Viberant POS  ·  v1.0.0',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+          // ── Business section ───────────────────────────────────────────────
+          SectionLabel('Business'),
+          _Card(
+            child: _InfoTile(
+              icon: Icons.business_rounded,
+              title: 'Business Name',
+              value: user.businessName,
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-      ],
+
+          // ── About section ──────────────────────────────────────────────────
+          SectionLabel('About'),
+          _Card(
+            child: Column(
+              children: [
+                _InfoTile(
+                  icon: Icons.info_outline_rounded,
+                  title: 'App Version',
+                  value: '1.0.0',
+                ),
+                _Divider(),
+                _InfoTile(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Account Type',
+                  value: user.isAdmin ? 'Administrator' : 'Employee',
+                ),
+              ],
+            ),
+          ),
+
+          // ── Sign out ───────────────────────────────────────────────────────
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              onPressed: () => _showSignOutDialog(context, ref),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ViberantColors.error,
+                side: BorderSide(color: ViberantColors.error.withOpacity(0.4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: Text(
+                'Sign Out',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: ViberantColors.error,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  void _confirmSignOut(BuildContext context, WidgetRef ref) {
+  void _showSignOutDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(
-          'Sign Out',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.logout_rounded,
+              color: ViberantColors.error,
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Sign Out',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
         content: Text(
           'Are you sure you want to sign out?',
-          style: GoogleFonts.inter(fontSize: 14),
+          style: GoogleFonts.inter(color: ViberantColors.outline),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          TextButton(
-            onPressed: () {
+          ElevatedButton(
+            onPressed: () async {
               Navigator.pop(context);
-              ref.read(authProvider.notifier).signOut();
+              await ref.read(authProvider.notifier).signOut();
             },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ViberantColors.error,
             ),
             child: const Text('Sign Out'),
           ),
@@ -229,76 +220,127 @@ class SettingsPage extends ConsumerWidget {
   }
 }
 
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  const _SectionLabel(this.label);
+// ─── Local helper widgets ─────────────────────────────────────────────────────
+class _Card extends StatelessWidget {
+  final Widget child;
+  const _Card({required this.child});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 4),
-    child: Text(
-      label.toUpperCase(),
-      style: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.8,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3),
       ),
+      boxShadow: [
+        BoxShadow(
+          color: ViberantColors.primary.withOpacity(0.03),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: child,
+  );
+}
+
+class _Divider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Divider(
+    height: 1,
+    thickness: 0.5,
+    color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3),
+    indent: 56,
+  );
+}
+
+class _SwitchTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _SwitchTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: ViberantColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(icon, color: ViberantColors.primary, size: 18),
+    ),
+    title: Text(
+      title,
+      style: GoogleFonts.inter(
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+    ),
+    subtitle: Text(
+      subtitle,
+      style: GoogleFonts.inter(
+        fontSize: 12,
+        color: Theme.of(context).colorScheme.outline,
+      ),
+    ),
+    trailing: Switch(
+      value: value,
+      onChanged: onChanged,
+      activeColor: ViberantColors.primary,
     ),
   );
 }
 
-class _SettingsTile extends StatelessWidget {
+class _InfoTile extends StatelessWidget {
   final IconData icon;
-  final String label;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-  final bool showChevron;
-  final Color? iconColor;
-  final Color? labelColor;
-
-  const _SettingsTile({
+  final String title;
+  final String value;
+  const _InfoTile({
     required this.icon,
-    required this.label,
-    this.trailing,
-    this.onTap,
-    this.showChevron = false,
-    this.iconColor,
-    this.labelColor,
+    required this.title,
+    required this.value,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(ViberantRadius.card),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: iconColor ?? scheme.onSurfaceVariant),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: labelColor ?? scheme.onSurface,
-                ),
-              ),
-            ),
-            if (trailing != null) trailing!,
-            if (showChevron)
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: scheme.onSurfaceVariant,
-              ),
-          ],
-        ),
+  Widget build(BuildContext context) => ListTile(
+    leading: Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
       ),
-    );
-  }
+      child: Icon(
+        icon,
+        size: 18,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
+    title: Text(
+      title,
+      style: GoogleFonts.inter(
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+    ),
+    trailing: Text(
+      value,
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
 }
